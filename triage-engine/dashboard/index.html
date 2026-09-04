@@ -16,12 +16,12 @@
       </div>
       <nav>
         <button class="nav-item active" data-view="queue"><span>▦</span>Live Queue</button>
-        <button class="nav-item" data-view="alerts"><span>⚠</span>Critical Alerts</button>
         <button class="nav-item" data-view="audit"><span>☷</span>Audit Trail</button>
+        <a href="/kiosk.html" target="_blank" style="text-decoration:none;"><button class="nav-item"><span>🖥</span>Patient Intake Terminal</button></a>
       </nav>
       <div class="sidebar-foot">
         <div class="system-state"><i id="connection-dot"></i><span id="connection-text">Connecting…</span></div>
-        <div class="system-note">Real-time triage stream<br/>Socket.IO + deterministic rules</div>
+        <div class="system-note">Real-time triage stream<br/>Socket.IO + HPR Biometric Gate</div>
       </div>
     </aside>
 
@@ -30,7 +30,7 @@
         <div>
           <div class="eyebrow">CLINICAL OPERATIONS</div>
           <h1>Live Patient Queue</h1>
-          <p>Monitor incoming kiosk encounters and review explainable triage decisions.</p>
+          <p>Monitor incoming kiosk encounters, enforce HPR write-lock, and export ABDM FHIR R4 Bundles.</p>
         </div>
         <div class="top-actions">
           <button class="ghost-btn" id="refresh-btn">↻ Refresh</button>
@@ -63,7 +63,7 @@
           <div class="empty-state">
             <div class="empty-icon">◉</div>
             <h3>Select an encounter</h3>
-            <p>Choose a patient from the queue to inspect vitals, symptoms, triggered rules and the clinical audit trail.</p>
+            <p>Choose a patient from the queue to inspect vitals, symptoms, HPR write-lock authentication, and export FHIR R4 Bundles.</p>
           </div>
         </aside>
       </section>

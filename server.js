@@ -7,10 +7,11 @@ const morgan = require('morgan');
 const { Server } = require('socket.io');
 const { connectDB } = require('./config/db');
 
-// Import Routes
+// Import Routes & Handlers
 const kioskRoutes = require('./routes/kioskRoutes');
 const clinicalRoutes = require('./routes/clinicalRoutes');
 const hprRoutes = require('./routes/hprRoutes');
+const hprAuthMiddleware = require('./middleware/hprAuth');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -31,28 +32,42 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(morgan('dev'));
 
+// Serve Public Static Assets (Kiosk UI at /kiosk.html)
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Serve Frontend Command Center Static UI under /dashboard
 const dashboardPath = path.join(__dirname, 'triage-engine', 'dashboard');
 app.use('/dashboard', express.static(dashboardPath));
 
-// API Routes Mounting
+// Direct Kiosk HTML Shortcut Routes
+app.get('/kiosk', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'kiosk.html'));
+});
+
+// API Base Routes Mounting
 app.use('/api/v1/kiosk', kioskRoutes);
 app.use('/api/v1/clinical', clinicalRoutes);
 app.use('/api/v1/hpr', hprRoutes);
 
-// Compatibility Routes for Frontend Event APIs (/api/events/...)
+// Compatibility Base Routes for Frontend Event APIs (/api/events/...)
 app.use('/api/events', kioskRoutes);
 app.use('/api/events', clinicalRoutes);
+
+// Specific Direct Endpoint Aliases (Module 6 & 7 & Intake Specs)
+app.post('/api/v1/intake', kioskRoutes.handleKioskIngestion);
+app.post('/api/v1/doctor/verify', hprAuthMiddleware, clinicalRoutes.handleClinicalCommit);
+app.get('/api/v1/export/fhir/:intakeId', clinicalRoutes.handleFhirExport);
 
 // Health Check Endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'UP',
-    service: 'MediKiosk Unified Backend & Triage Engine',
+    service: 'MediKiosk Unified Backend, Triage Engine & Kiosk Terminal',
     port: PORT,
     timestamp: new Date().toISOString(),
     version: '1.0.0',
     standards: ['HL7 FHIR R4', 'ABDM M1/M2/M3', 'HPR Biometric Write-Lock', 'Socket.IO Real-Time Stream'],
+    kioskUrl: `http://localhost:${PORT}/kiosk.html`,
     dashboardUrl: `http://localhost:${PORT}/dashboard/index.html`
   });
 });
@@ -60,14 +75,15 @@ app.get('/health', (req, res) => {
 // Root Welcome Endpoint
 app.get('/', (req, res) => {
   res.status(200).json({
-    message: 'Welcome to MediKiosk Pure Backend & Real-Time Triage API Service',
-    dashboard: `/dashboard/index.html`,
+    message: 'Welcome to MediKiosk Self-Service Patient Intake & Doctor Command Center',
+    kioskTerminal: `/kiosk.html`,
+    doctorDashboard: `/dashboard/index.html`,
     health: `/health`,
     docs: {
-      kioskIntake: 'POST /api/v1/kiosk/intake',
+      kioskIntake: 'POST /api/v1/intake (or POST /api/v1/kiosk/intake)',
       doctorSummary: 'GET /api/v1/clinical/patient/:id/summary',
-      clinicalCommit: 'POST /api/v1/clinical/commit (HPR Token Required)',
-      fhirExport: 'GET /api/v1/clinical/fhir/bundle/:intakeId',
+      clinicalCommit: 'POST /api/v1/doctor/verify (or POST /api/v1/clinical/commit)',
+      fhirExport: 'GET /api/v1/export/fhir/:intakeId (or GET /api/v1/clinical/fhir/bundle/:intakeId)',
       demoSeed: 'POST /api/events/demo/seed',
       hprLogin: 'POST /api/v1/hpr/login'
     }
@@ -121,21 +137,27 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('PATIENT_EVENT_RECEIVED', (data) => {
+    console.log(`[Socket.IO] Patient event received from kiosk for session: ${data?.sessionId}`);
+    io.emit('PATIENT_EVENT_RECEIVED', data);
+  });
+
   socket.on('disconnect', () => {
     console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
   });
 });
 
-// Attach socket instance to app for routes if needed
+// Attach socket instance to Express app
 app.set('io', io);
 
 // Start HTTP & Socket Server
 if (require.main === module) {
   httpServer.listen(PORT, () => {
     console.log(`=======================================================`);
-    console.log(` MediKiosk Unified Backend Server running on port ${PORT}`);
-    console.log(` Doctor Command Center Dashboard: http://localhost:${PORT}/dashboard/index.html`);
-    console.log(` Socket.IO Gateway Initialized`);
+    console.log(` MediKiosk Unified Server running on port ${PORT}`);
+    console.log(` Patient Intake Kiosk: http://localhost:${PORT}/kiosk.html`);
+    console.log(` Doctor Command Center: http://localhost:${PORT}/dashboard/index.html`);
+    console.log(` Socket.IO Gateway Active`);
     console.log(` Health Check: http://localhost:${PORT}/health`);
     console.log(`=======================================================`);
   });

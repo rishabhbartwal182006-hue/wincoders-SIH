@@ -17,7 +17,6 @@ async function handleKioskIngestion(req, res) {
     const abhaId = payload.abhaId || payload.patientId || `ABHA-${Date.now()}`;
 
     if (!payload.abhaId && !payload.patientId && !payload.patientDemographics?.fullName) {
-      // Allow fallback default patient if none provided
       payload.abhaId = abhaId;
     }
 
@@ -41,7 +40,7 @@ async function handleKioskIngestion(req, res) {
       };
     }
 
-    // Provenance Tagging Defaults for Vitals if raw numeric object sent
+    // Provenance Tagging Defaults for Vitals
     if (payload.vitals) {
       ['bloodPressure', 'spo2', 'heartRate', 'temperature', 'bloodGlucose'].forEach(vKey => {
         if (payload.vitals[vKey] && typeof payload.vitals[vKey] === 'object' && !payload.vitals[vKey].provenanceMeta) {
@@ -110,6 +109,29 @@ async function handleKioskIngestion(req, res) {
       await memoryStore.save('AuditLog', auditData);
     }
 
+    // Broadcast Socket.io Event to update Doctor Dashboard UI in real time
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('PATIENT_EVENT_RECEIVED', {
+        sessionId: savedRecord.intakeId,
+        patientId: savedRecord.abhaId,
+        status: savedRecord.status,
+        timestamp: new Date().toISOString()
+      });
+      io.emit('TRIAGE_UPDATED', {
+        sessionId: savedRecord.intakeId,
+        status: savedRecord.status,
+        triageResult: {
+          patientId: savedRecord.abhaId,
+          triageLevel: savedRecord.triage?.triageLevel || 'ROUTINE',
+          reason: savedRecord.hpi?.narrative || 'Kiosk self-service intake completed.',
+          action: savedRecord.triage?.protocolNotes || 'Standard Clinical Queue',
+          triggeredRules: uniqueDiscrepancies.map(d => d.message),
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: "Kiosk intake successfully ingested and persisted in PROVISIONAL state.",
@@ -136,7 +158,7 @@ async function handleKioskIngestion(req, res) {
   }
 }
 
-// Ingestion Routes
+// Ingestion Routes & Aliases
 router.post('/intake', handleKioskIngestion);
 router.post('/submit', handleKioskIngestion);
 

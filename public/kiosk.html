@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediKiosk | Patient Self-Service Intake Terminal</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+  <div class="kiosk-container">
+    <!-- Header -->
+    <header class="kiosk-header">
+      <div class="kiosk-title">
+        <span>✚</span> MediKiosk Self-Service Terminal
+      </div>
+      <div class="staff-toggle">
+        <input type="checkbox" id="staffModeToggle" />
+        <label for="staffModeToggle">Staff Assisted Mode</label>
+      </div>
+    </header>
+
+    <!-- Patient Demographics Section -->
+    <section class="card-section">
+      <div class="card-title">
+        <span>1. Patient Demographics & ABHA Verification</span>
+        <span id="demographicsProvenance" style="font-size: 11px; color: #2563eb; font-weight: 700;">[TOUCH-SELECTED]</span>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="fullName">Full Name *</label>
+          <input type="text" id="fullName" value="Ramesh Chandra Sharma" placeholder="Enter patient name" required />
+        </div>
+        <div class="form-group">
+          <label for="age">Age (Years) *</label>
+          <input type="number" id="age" value="54" min="1" max="120" required />
+        </div>
+        <div class="form-group">
+          <label for="gender">Gender *</label>
+          <select id="gender">
+            <option value="M" selected>Male</option>
+            <option value="F">Female</option>
+            <option value="O">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="abhaId">ABHA ID (Ayushman Bharat Health Account)</label>
+          <input type="text" id="abhaId" value="ABHA-91-8273-4651-0982" placeholder="e.g. ABHA-12-3456-7890-1234" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Clinical Assessment Mode Switcher -->
+    <section class="card-section">
+      <div class="card-title">2. Clinical Assessment Mode</div>
+      <div class="mode-switcher">
+        <button type="button" class="mode-btn active" id="btnAllopathyMode">Allopathy Symptom Assessment</button>
+        <button type="button" class="mode-btn" id="btnAyushMode">AYUSH Dashavidha Pariksha</button>
+      </div>
+
+      <!-- Allopathy Form -->
+      <div id="allopathySection">
+        <div class="form-grid">
+          <div class="form-group" style="grid-column: span 2;">
+            <label for="chiefComplaint">Chief Complaint *</label>
+            <input type="text" id="chiefComplaint" value="Acute Frontal Headache & Dizziness" placeholder="Describe primary symptoms" />
+          </div>
+          <div class="form-group">
+            <label for="duration">Duration</label>
+            <input type="text" id="duration" value="3 days" placeholder="e.g. 3 days, 2 weeks" />
+          </div>
+          <div class="form-group">
+            <label for="severity">Severity</label>
+            <select id="severity">
+              <option value="Mild">Mild</option>
+              <option value="Moderate">Moderate</option>
+              <option value="Severe" selected>Severe</option>
+            </select>
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label for="hpiNarrative">History of Present Illness (HPI)</label>
+            <textarea id="hpiNarrative" rows="2" placeholder="Details about symptom onset, character, aggravating factors...">Progressive headache over last 3 days, lightheadedness upon standing.</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- AYUSH Form -->
+      <div id="ayushSection" style="display: none;">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="ayushAgni">Agni (Digestive Fire)</label>
+            <select id="ayushAgni">
+              <option value="Sama (Balanced Digestive Fire)">Sama (Balanced)</option>
+              <option value="Manda (Slow/Sluggish)">Manda (Slow)</option>
+              <option value="Tikshnagni (Intense/High)" selected>Tikshnagni (Intense/High Appetite)</option>
+              <option value="Vishama (Irregular/Fluctuating)">Vishama (Irregular)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="ayushKoshtha">Koshtha (Bowel Habit)</label>
+            <select id="ayushKoshtha">
+              <option value="Madhyama (Normal Bowel Habit)" selected>Madhyama (Normal)</option>
+              <option value="Krura (Hard/Constipated)">Krura (Hard/Constipated)</option>
+              <option value="Mridu (Soft/Frequent)">Mridu (Soft/Frequent)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="ayushMutra">Mutra (Urine Characteristics)</label>
+            <select id="ayushMutra">
+              <option value="Prabhuta Mutrata (Increased Frequency)" selected>Prabhuta Mutrata (Increased Frequency)</option>
+              <option value="Normal Clear">Normal Clear</option>
+              <option value="Alpa Mutra (Decreased Frequency)">Alpa Mutra (Decreased)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="ayushAhara">Ahara-Vihara (Diet & Lifestyle Impact)</label>
+            <input type="text" id="ayushAhara" value="High spice & sodium intake, irregular sleep" placeholder="Dietary habits, sleep, lifestyle notes" />
+          </div>
+        </div>
+
+        <div class="advisory-box">
+          <strong>ℹ️ AYUSH Vaidya Clinical Advisory Notice:</strong><br />
+          Dashavidha Pariksha parameters (Agni, Koshtha, Mutra) are captured for preliminary triage. <strong>Prakriti (Deha Prakriti constitution)</strong> and <strong>Sattva (Mental temperament)</strong> require direct, in-person examination by the attending Vaidya.
+        </div>
+      </div>
+    </section>
+
+    <!-- Hardware Vitals Capture Module (Module 3) -->
+    <section class="card-section">
+      <div class="card-title">
+        <span>3. Hardware Vitals Capture Station</span>
+        <span style="font-size: 11px; color: #15803d; font-weight: 700;">[DEVICE-CAPTURED]</span>
+      </div>
+
+      <div class="vitals-grid">
+        <!-- BP Cuff -->
+        <div class="vital-card">
+          <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Mounted BP Cuff</div>
+          <div class="vital-value" id="dispBP">165 / 102</div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">mmHg</div>
+          <button type="button" class="btn-action" id="btnMeasureBP">Measure BP</button>
+        </div>
+
+        <!-- Pulse Oximeter -->
+        <div class="vital-card">
+          <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Pulse Oximeter</div>
+          <div class="vital-value" id="dispSpO2">97%</div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">SpO₂ | HR: <span id="dispHR" style="color: #0f172a; font-weight: 700;">88</span> bpm</div>
+          <button type="button" class="btn-action" id="btnCaptureSpO2">Capture SpO₂</button>
+        </div>
+
+        <!-- Glucometer -->
+        <div class="vital-card">
+          <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Glucometer</div>
+          <div class="vital-value" id="dispGlucose">245</div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">mg/dL (Random Blood Sugar)</div>
+          <button type="button" class="btn-action" id="btnReadGlucose">Read Glucose</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Submission -->
+    <button type="button" class="submit-btn" id="btnSubmitIntake">Submit Self-Service Intake Payload</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/kiosk.js"></script>
+</body>
+</html>

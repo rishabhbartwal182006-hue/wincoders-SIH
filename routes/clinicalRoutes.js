@@ -298,7 +298,6 @@ router.get('/session/:sessionId/audit', async (req, res) => {
 
 /**
  * POST /api/events/demo/seed
- * Seed Demo Encounters Route for Doctor Dashboard
  */
 router.post('/demo/seed', async (req, res) => {
   try {
@@ -508,13 +507,14 @@ async function handleClinicalCommit(req, res) {
 
 router.post('/commit', hprAuthMiddleware, handleClinicalCommit);
 router.post('/approve', hprAuthMiddleware, handleClinicalCommit);
+router.post('/doctor/verify', hprAuthMiddleware, handleClinicalCommit);
 
 /**
- * GET /api/v1/clinical/fhir/bundle/:intakeId
+ * FHIR R4 Bundle Retrieval API
  */
-router.get('/fhir/bundle/:intakeId', async (req, res) => {
+async function handleFhirExport(req, res) {
   try {
-    const { intakeId } = req.params;
+    const intakeId = req.params.intakeId || req.params.id;
 
     let record = null;
     if (isMongoConnected()) {
@@ -522,7 +522,7 @@ router.get('/fhir/bundle/:intakeId', async (req, res) => {
         $or: [{ intakeId: intakeId }, { abhaId: intakeId }]
       });
     } else {
-      record = await memoryStore.findOne('ProvisionalIntake', { intakeId }) ||
+      record = await memoryStore.findOne('ProvisionalIntake', { intakeId: intakeId }) ||
                await memoryStore.findOne('ProvisionalIntake', { abhaId: intakeId });
     }
 
@@ -547,7 +547,12 @@ router.get('/fhir/bundle/:intakeId', async (req, res) => {
       message: `Failed to export FHIR bundle: ${err.message}`
     });
   }
-});
+}
+
+router.get('/fhir/bundle/:intakeId', handleFhirExport);
+router.get('/export/fhir/:intakeId', handleFhirExport);
 
 module.exports = router;
 module.exports.buildDashboardSummary = buildDashboardSummary;
+module.exports.handleClinicalCommit = handleClinicalCommit;
+module.exports.handleFhirExport = handleFhirExport;
