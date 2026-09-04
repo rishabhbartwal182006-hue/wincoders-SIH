@@ -1,0 +1,144 @@
+const express = require('express');
+const router = express.Router();
+const ProvisionalIntake = require('../models/ProvisionalIntake');
+const AuditLog = require('../models/AuditLog');
+const { isMongoConnected, memoryStore } = require('../config/db');
+const { analyzeDiscrepancies } = require('../services/discrepancyEngine');
+
+/**
+ * Kiosk Ingestion Handler (supports both Task 5 & Frontend Event contracts)
+ */
+async function handleKioskIngestion(req, res) {
+  try {
+    const payload = req.body || {};
+
+    // Normalize IDs (support intakeId/sessionId and abhaId/patientId)
+    const intakeId = payload.intakeId || payload.sessionId || `INTAKE-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const abhaId = payload.abhaId || payload.patientId || `ABHA-${Date.now()}`;
+
+    if (!payload.abhaId && !payload.patientId && !payload.patientDemographics?.fullName) {
+      // Allow fallback default patient if none provided
+      payload.abhaId = abhaId;
+    }
+
+    // Default patient demographics if missing
+    if (!payload.patientDemographics) {
+      payload.patientDemographics = {
+        fullName: payload.patientId || payload.fullName || "Anonymous Patient",
+        gender: payload.gender || "M",
+        age: payload.age || 45,
+        provenanceMeta: {
+          provenance: 'touch-selected',
+          confidence: 1.0,
+          timestamp: new Date()
+        }
+      };
+    } else if (!payload.patientDemographics.provenanceMeta) {
+      payload.patientDemographics.provenanceMeta = {
+        provenance: 'touch-selected',
+        confidence: 1.0,
+        timestamp: new Date()
+      };
+    }
+
+    // Provenance Tagging Defaults for Vitals if raw numeric object sent
+    if (payload.vitals) {
+      ['bloodPressure', 'spo2', 'heartRate', 'temperature', 'bloodGlucose'].forEach(vKey => {
+        if (payload.vitals[vKey] && typeof payload.vitals[vKey] === 'object' && !payload.vitals[vKey].provenanceMeta) {
+          payload.vitals[vKey].provenanceMeta = {
+            provenance: 'device-captured',
+            confidence: 0.99,
+            timestamp: new Date()
+          };
+        }
+      });
+    }
+
+    // Run Cross-Verification Discrepancy Engine
+    const autoDiscrepancies = analyzeDiscrepancies(payload);
+    const combinedDiscrepancies = [
+      ...(payload.discrepancyFlags || []),
+      ...autoDiscrepancies
+    ];
+
+    const uniqueDiscrepancies = Array.from(
+      new Map(combinedDiscrepancies.map(item => [item.flagId || item.message, item])).values()
+    );
+
+    const provisionalRecord = {
+      ...payload,
+      intakeId: intakeId,
+      abhaId: abhaId,
+      status: payload.status || 'PROVISIONAL',
+      discrepancyFlags: uniqueDiscrepancies,
+      createdAt: payload.createdAt || new Date(),
+      updatedAt: new Date()
+    };
+
+    // Database Persistence
+    let savedRecord = null;
+    if (isMongoConnected()) {
+      savedRecord = await ProvisionalIntake.findOneAndUpdate(
+        { intakeId: intakeId },
+        provisionalRecord,
+        { upsert: true, new: true }
+      );
+    } else {
+      savedRecord = await memoryStore.save('ProvisionalIntake', provisionalRecord);
+    }
+
+    // Audit Logging
+    const auditData = {
+      logId: `AUDIT-INTAKE-${Date.now()}`,
+      action: 'KIOSK_INTAKE_RECEIVED',
+      intakeId: intakeId,
+      abhaId: abhaId,
+      performedBy: 'KIOSK_SELF_SERVICE_TERMINAL',
+      ipAddress: req.ip || '127.0.0.1',
+      details: {
+        vitalsCaptured: !!payload.vitals,
+        ocrDocsCount: payload.ocrDocuments ? payload.ocrDocuments.length : 0,
+        chiefComplaintsCount: payload.chiefComplaints ? payload.chiefComplaints.length : 0,
+        discrepanciesDetected: uniqueDiscrepancies.length
+      },
+      timestamp: new Date()
+    };
+
+    if (isMongoConnected()) {
+      await AuditLog.create(auditData);
+    } else {
+      await memoryStore.save('AuditLog', auditData);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Kiosk intake successfully ingested and persisted in PROVISIONAL state.",
+      data: {
+        intakeId: savedRecord.intakeId,
+        sessionId: savedRecord.intakeId,
+        abhaId: savedRecord.abhaId,
+        patientId: savedRecord.abhaId,
+        status: savedRecord.status,
+        patientName: savedRecord.patientDemographics?.fullName,
+        discrepanciesDetected: uniqueDiscrepancies.length,
+        discrepancyFlags: uniqueDiscrepancies,
+        clinicalSummaryUrl: `/api/v1/clinical/patient/${savedRecord.abhaId}/summary`
+      }
+    });
+
+  } catch (err) {
+    console.error(`[Kiosk Ingestion Error]: ${err.message}`, err);
+    return res.status(500).json({
+      success: false,
+      error: "INGESTION_FAILED",
+      message: `Failed to process kiosk intake: ${err.message}`
+    });
+  }
+}
+
+// Ingestion Routes
+router.post('/intake', handleKioskIngestion);
+router.post('/submit', handleKioskIngestion);
+
+module.exports = router;
+module.exports.handleKioskIngestion = handleKioskIngestion;
