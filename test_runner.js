@@ -1,20 +1,15 @@
 /**
- * MediKiosk Task 5, Module 6 & 7 Full Integration Test Runner
- * Validates:
- * 1. Health Check & Kiosk Terminal UI Endpoint (GET /kiosk.html)
- * 2. Demo Seed Endpoint (POST /api/events/demo/seed)
- * 3. Kiosk Intake Submission API (POST /api/v1/intake)
- * 4. Doctor Dashboard Summary (GET /api/v1/clinical/patient/:id/summary)
- * 5. Frontend Queue Overview (GET /api/events/sessions)
- * 6. HPR Write-Lock Security Protection (401 Unauthorized check)
- * 7. HPR Doctor Verification Sign-Off (POST /api/v1/doctor/verify)
- * 8. ABDM FHIR R4 Bundle Export (GET /api/v1/export/fhir/:intakeId)
+ * MediKiosk Full Integration Test Runner
+ * Validates all backend APIs, FHIR mapping, HPR security, discrepancy engine,
+ * consent-filtered FHIR export, and ABDM sync pipeline.
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const app = require('./server');
+const { evaluateClinicalDiscrepancies } = require('./services/discrepancyEngine');
+const { generateFHIRBundle } = require('./services/fhirMapper');
 
 const PORT = process.env.PORT || 4000;
 let server = null;
@@ -45,7 +40,7 @@ function request(options, postData) {
 
 async function runTests() {
   console.log(`=======================================================`);
-  console.log(`  MEDIKIOSK KIOSK, HPR & FHIR PIPELINE TEST SUITE      `);
+  console.log(`  MEDIKIOSK ALL-MODULES & PROMPTS INTEGRATION TEST     `);
   console.log(`=======================================================\n`);
 
   server = app.listen(PORT);
@@ -61,7 +56,7 @@ async function runTests() {
 
   function logFail(msg, err) {
     failed++;
-    console.error(`[FAIL] xhtml ${msg}:`, err);
+    console.error(`[FAIL] x ${msg}:`, err);
   }
 
   try {
@@ -108,7 +103,7 @@ async function runTests() {
       logFail('Demo Seed Route Endpoint', seedDemoRes);
     }
 
-    // TEST 4: Kiosk Intake Submission API (POST /api/v1/intake)
+    // TEST 4: Prompt 1 Dynamic Triage Ingestion (POST /api/v1/intake)
     const seedPayload = JSON.parse(fs.readFileSync(path.join(__dirname, 'seed_data.json'), 'utf8'));
     const intakeRes = await request({
       hostname: '127.0.0.1',
@@ -119,12 +114,20 @@ async function runTests() {
     }, seedPayload);
 
     if (intakeRes.status === 201 && intakeRes.body?.data?.status === 'PROVISIONAL') {
-      logPass(`Kiosk Intake Submission API (POST /api/v1/intake) - Intake ID: ${intakeRes.body.data.intakeId}, Status: PROVISIONAL`);
+      logPass(`Prompt 1 Ingestion & Dynamic Triage (POST /api/v1/intake) - Intake ID: ${intakeRes.body.data.intakeId}, Status: PROVISIONAL`);
     } else {
       logFail('Kiosk Intake Submission Endpoint', intakeRes);
     }
 
-    // TEST 5: Doctor Dashboard Summary (GET /api/v1/clinical/patient/:id/summary)
+    // TEST 5: Prompt 2 Module 5 Discrepancy & Omission Checker
+    const discResult = evaluateClinicalDiscrepancies(seedPayload);
+    if (typeof discResult.completenessScore === 'number' && Array.isArray(discResult.omissions) && Array.isArray(discResult.discrepancies)) {
+      logPass(`Prompt 2 Module 5 Discrepancy Engine Validated - Completeness Score: ${discResult.completenessScore}%, Contradictions: ${discResult.discrepancies.length}`);
+    } else {
+      logFail('Module 5 Discrepancy Engine', discResult);
+    }
+
+    // TEST 6: Doctor Dashboard Summary & SOAP View (GET /api/v1/clinical/patient/:id/summary)
     const abhaId = seedPayload.abhaId;
     const summaryRes = await request({
       hostname: '127.0.0.1',
@@ -139,7 +142,7 @@ async function runTests() {
       const isOrderValid = JSON.stringify(order) === JSON.stringify(expectedOrder);
       
       if (isOrderValid) {
-        logPass(`Doctor Dashboard Summary Order Validated: ${order.join(' -> ')}`);
+        logPass(`Prompt 3 Doctor Dashboard Summary & SOAP Order Validated: ${order.join(' -> ')}`);
       } else {
         logFail('Doctor Dashboard Summary Order Mismatch', order);
       }
@@ -147,7 +150,7 @@ async function runTests() {
       logFail('Doctor Dashboard Summary Endpoint', summaryRes);
     }
 
-    // TEST 6: HPR Write-Lock Protection (UNAUTHORIZED COMMIT)
+    // TEST 7: HPR Write-Lock Protection (UNAUTHORIZED COMMIT)
     const unauthCommitRes = await request({
       hostname: '127.0.0.1',
       port: PORT,
@@ -157,12 +160,12 @@ async function runTests() {
     }, { intakeId: seedPayload.intakeId });
 
     if (unauthCommitRes.status === 401 && unauthCommitRes.body?.error === 'HPR_TOKEN_MISSING') {
-      logPass('Module 6 HPR Security Middleware successfully blocked unauthorized sign-off (401 Unauthorized)');
+      logPass('Prompt 3 HPR Security Middleware successfully blocked unauthorized sign-off (401 Unauthorized)');
     } else {
-      logFail('Module 6 HPR Write-Lock Protection Failed', unauthCommitRes);
+      logFail('Prompt 3 HPR Write-Lock Protection Failed', unauthCommitRes);
     }
 
-    // TEST 7: HPR Token Provisioning (POST /api/v1/hpr/login)
+    // TEST 8: HPR Token Provisioning (POST /api/v1/hpr/login)
     const hprLoginRes = await request({
       hostname: '127.0.0.1',
       port: PORT,
@@ -184,7 +187,7 @@ async function runTests() {
       logFail('HPR Doctor Token Login', hprLoginRes);
     }
 
-    // TEST 8: Module 6 Doctor Verification Sign-Off (POST /api/v1/doctor/verify)
+    // TEST 9: Prompt 3 Doctor Verification Sign-Off (POST /api/v1/doctor/verify)
     if (hprToken) {
       const commitRes = await request({
         hostname: '127.0.0.1',
@@ -201,14 +204,14 @@ async function runTests() {
       });
 
       if (commitRes.status === 200 && commitRes.body?.data?.status === 'VERIFIED_COMMITTED') {
-        logPass(`Module 6 Clinical Commit Success - Status transitioned to VERIFIED_COMMITTED`);
+        logPass(`Prompt 3 Clinical Commit Success - Status transitioned to VERIFIED_COMMITTED`);
         logPass(`Immutable Digital Signature Attached: ${commitRes.body.data.hprSignatureBlock.digitalSignature}`);
       } else {
-        logFail('Module 6 Doctor Verification Sign-Off', commitRes);
+        logFail('Prompt 3 Doctor Verification Sign-Off', commitRes);
       }
     }
 
-    // TEST 9: Module 7 ABDM FHIR (R4) Bundle Export (GET /api/v1/export/fhir/:intakeId)
+    // TEST 10: Module 7 ABDM FHIR (R4) Bundle Export (GET /api/v1/export/fhir/:intakeId)
     const fhirRes = await request({
       hostname: '127.0.0.1',
       port: PORT,
@@ -217,9 +220,42 @@ async function runTests() {
     });
 
     if (fhirRes.status === 200 && fhirRes.body?.resourceType === 'Bundle' && fhirRes.body?.type === 'document') {
-      logPass(`Module 7 HL7 FHIR (R4) Bundle Export Validated (GET /api/v1/export/fhir/:intakeId): ResourceType = Bundle, Type = document, Entries = ${fhirRes.body.entry?.length}`);
+      const hasEncounter = fhirRes.body.entry?.some(e => e.resource?.resourceType === 'Encounter');
+      const hasHR = fhirRes.body.entry?.some(e => e.resource?.resourceType === 'Observation' && e.resource?.code?.coding?.[0]?.code === '8867-4');
+      logPass(`HL7 FHIR (R4) Bundle Export Validated: ResourceType=Bundle, Entries=${fhirRes.body.entry?.length}, Encounter=${hasEncounter}, HeartRate(8867-4)=${hasHR}`);
     } else {
-      logFail('Module 7 HL7 FHIR R4 Bundle Export', fhirRes);
+      logFail('HL7 FHIR R4 Bundle Export', fhirRes);
+    }
+
+    // TEST 11: generateFHIRBundle — Consent Filtering (vitalsOnly mode)
+    const sampleIntake = JSON.parse(fs.readFileSync(path.join(__dirname, 'seed_data.json'), 'utf8'));
+    const vitalsOnlyBundle = generateFHIRBundle(sampleIntake, { vitalsOnly: true, fullHistory: true, ayushNotes: true });
+    const hasNonVitalObs = vitalsOnlyBundle.entry?.some(e =>
+      e.resource?.resourceType === 'Observation' &&
+      e.resource?.category?.[0]?.coding?.[0]?.code !== 'vital-signs'
+    );
+    const hasConditionInVitalsOnly = vitalsOnlyBundle.entry?.some(e => e.resource?.resourceType === 'Condition');
+    if (!hasNonVitalObs && !hasConditionInVitalsOnly) {
+      logPass(`generateFHIRBundle — VitalsOnly consent filter correctly strips non-vital Observations and Conditions`);
+    } else {
+      logFail('generateFHIRBundle VitalsOnly consent filter', { hasNonVitalObs, hasConditionInVitalsOnly });
+    }
+
+    // TEST 12: Consent-filtered FHIR endpoint via HTTP (vitalsOnly=true)
+    const consentFhirRes = await request({
+      hostname: '127.0.0.1',
+      port: PORT,
+      path: `/api/v1/export/fhir/${sampleIntake.intakeId}?vitalsOnly=true`,
+      method: 'GET'
+    });
+
+    if (consentFhirRes.status === 200 && consentFhirRes.body?.resourceType === 'Bundle') {
+      const hasConsentExt = consentFhirRes.body.entry?.some(e =>
+        e.resource?.extension?.some(x => x.url?.includes('consent-settings'))
+      );
+      logPass(`Consent-filtered FHIR Endpoint (vitalsOnly=true): Bundle returned, consent extension present=${hasConsentExt}`);
+    } else {
+      logFail('Consent-filtered FHIR HTTP Endpoint', consentFhirRes);
     }
 
   } catch (err) {
@@ -234,3 +270,4 @@ async function runTests() {
 }
 
 runTests();
+

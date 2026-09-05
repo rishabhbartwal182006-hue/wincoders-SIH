@@ -53,7 +53,7 @@ app.use('/api/v1/hpr', hprRoutes);
 app.use('/api/events', kioskRoutes);
 app.use('/api/events', clinicalRoutes);
 
-// Specific Direct Endpoint Aliases (Module 6 & 7 & Intake Specs)
+// Specific Direct Endpoint Aliases (Module 5, 6, 7 & Intake Specs)
 app.post('/api/v1/intake', kioskRoutes.handleKioskIngestion);
 app.post('/api/v1/doctor/verify', hprAuthMiddleware, clinicalRoutes.handleClinicalCommit);
 app.get('/api/v1/export/fhir/:intakeId', clinicalRoutes.handleFhirExport);
@@ -62,7 +62,7 @@ app.get('/api/v1/export/fhir/:intakeId', clinicalRoutes.handleFhirExport);
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'UP',
-    service: 'MediKiosk Unified Backend, Triage Engine & Kiosk Terminal',
+    service: 'MediKiosk Unified Backend, Triage Engine & Doctor Command Center',
     port: PORT,
     timestamp: new Date().toISOString(),
     version: '1.0.0',
@@ -135,6 +135,18 @@ io.on('connection', (socket) => {
       console.log(`[Socket.IO] Client ${socket.id} joined room 'session:${sessionId}'.`);
       if (typeof callback === 'function') callback({ status: 'OK', room: `session:${sessionId}` });
     }
+  });
+
+  // Prompt 1 Socket Event Relay: kiosk:intake_submitted
+  socket.on('kiosk:intake_submitted', (data) => {
+    console.log(`[Socket.IO] Relay 'kiosk:intake_submitted' event for session ${data?.sessionId} (Level: ${data?.triageLevel})`);
+    io.emit('kiosk:intake_submitted', data);
+  });
+
+  // Prompt 3 Socket Event Relay: EHR_RECORD_COMMITTED
+  socket.on('EHR_RECORD_COMMITTED', (data) => {
+    console.log(`[Socket.IO] Relay 'EHR_RECORD_COMMITTED' event for session ${data?.sessionId}`);
+    io.emit('EHR_RECORD_COMMITTED', data);
   });
 
   socket.on('PATIENT_EVENT_RECEIVED', (data) => {

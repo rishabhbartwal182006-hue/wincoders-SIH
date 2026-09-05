@@ -18,6 +18,7 @@ function generateUUID() {
 function convertToFhirR4Bundle(intake) {
   const bundleId = generateUUID();
   const patientRefId = generateUUID();
+  const encounterRefId = generateUUID();
   const timestamp = new Date().toISOString();
 
   // 1. Patient Resource (ABDM Health ID Profile)
@@ -51,11 +52,47 @@ function convertToFhirR4Bundle(intake) {
     birthDate: intake.patientDemographics?.dob || (intake.patientDemographics?.age ? `${new Date().getFullYear() - intake.patientDemographics.age}-01-01` : undefined)
   };
 
-  const bundleEntries = [
-    {
-      fullUrl: patientRefId,
-      resource: patientResource
+  // 2. Encounter Resource
+  const triageLevel = intake.triageResult?.triageLevel || intake.triage?.triageLevel || 'ROUTINE';
+  const priorityCodeMap = {
+    EMERGENCY: { code: 'EM', display: 'Emergency' },
+    URGENT: { code: 'UR', display: 'Urgent' },
+    ROUTINE: { code: 'R', display: 'Routine' }
+  };
+  const priorityCode = priorityCodeMap[triageLevel.toUpperCase()] || priorityCodeMap['ROUTINE'];
+
+  const encounterResource = {
+    resourceType: "Encounter",
+    id: encounterRefId.replace("urn:uuid:", ""),
+    meta: {
+      profile: ["https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"]
+    },
+    status: intake.status === 'VERIFIED_COMMITTED' ? 'finished' : 'in-progress',
+    class: {
+      system: "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+      code: "AMB",
+      display: "ambulatory"
+    },
+    priority: {
+      coding: [
+        {
+          system: "http://terminology.hl7.org/CodeSystem/v3-ActPriority",
+          code: priorityCode.code,
+          display: priorityCode.display
+        }
+      ],
+      text: triageLevel
+    },
+    subject: { reference: patientRefId },
+    period: {
+      start: intake.createdAt || timestamp,
+      end: intake.status === 'VERIFIED_COMMITTED' ? (intake.updatedAt || timestamp) : undefined
     }
+  };
+
+  const bundleEntries = [
+    { fullUrl: patientRefId, resource: patientResource },
+    { fullUrl: encounterRefId, resource: encounterResource }
   ];
 
   const sectionReferences = {
@@ -66,7 +103,7 @@ function convertToFhirR4Bundle(intake) {
     documents: []
   };
 
-  // 2. Observations - Vitals
+  // 3. Observations - Vitals
   if (intake.vitals) {
     // Blood Pressure Observation
     if (intake.vitals.bloodPressure) {
@@ -100,6 +137,7 @@ function convertToFhirR4Bundle(intake) {
           text: "Blood Pressure"
         },
         subject: { reference: patientRefId },
+        encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
         component: []
       };
@@ -147,6 +185,7 @@ function convertToFhirR4Bundle(intake) {
         category: [{ coding: [{ system: "http://terminology.hl7.org/CodeSystem/observation-category", code: "vital-signs" }] }],
         code: { coding: [{ system: "http://loinc.org", code: "2708-6", display: "Oxygen saturation in Arterial blood" }] },
         subject: { reference: patientRefId },
+        encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
         valueQuantity: {
           value: Number(intake.vitals.spo2.value),
@@ -157,6 +196,30 @@ function convertToFhirR4Bundle(intake) {
       };
       bundleEntries.push({ fullUrl: spo2ObsId, resource: spo2Obs });
       sectionReferences.vitals.push({ reference: spo2ObsId });
+    }
+
+    // Heart Rate Observation (LOINC 8867-4)
+    if (intake.vitals.heartRate) {
+      const hrObsId = generateUUID();
+      const hrObs = {
+        resourceType: "Observation",
+        id: hrObsId.replace("urn:uuid:", ""),
+        meta: { profile: ["https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"] },
+        status: "final",
+        category: [{ coding: [{ system: "http://terminology.hl7.org/CodeSystem/observation-category", code: "vital-signs" }] }],
+        code: { coding: [{ system: "http://loinc.org", code: "8867-4", display: "Heart rate" }] },
+        subject: { reference: patientRefId },
+        encounter: { reference: encounterRefId },
+        effectiveDateTime: timestamp,
+        valueQuantity: {
+          value: Number(intake.vitals.heartRate.value),
+          unit: intake.vitals.heartRate.unit || "bpm",
+          system: "http://unitsofmeasure.org",
+          code: "/min"
+        }
+      };
+      bundleEntries.push({ fullUrl: hrObsId, resource: hrObs });
+      sectionReferences.vitals.push({ reference: hrObsId });
     }
 
     // Blood Glucose Observation
@@ -170,6 +233,7 @@ function convertToFhirR4Bundle(intake) {
         category: [{ coding: [{ system: "http://terminology.hl7.org/CodeSystem/observation-category", code: "laboratory" }] }],
         code: { coding: [{ system: "http://loinc.org", code: "15074-8", display: "Glucose [Moles/volume] in Blood" }] },
         subject: { reference: patientRefId },
+        encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
         valueQuantity: {
           value: Number(intake.vitals.bloodGlucose.value),
@@ -183,7 +247,7 @@ function convertToFhirR4Bundle(intake) {
     }
   }
 
-  // 3. Observations - AYUSH Dashavidha Parameters
+  // 4. Observations - AYUSH Dashavidha Parameters
   if (intake.ayushParameters) {
     const ayushFields = ['nadi', 'jihva', 'mala', 'mutra', 'agni', 'koshtha', 'sparsha', 'drik', 'akriti', 'vaya'];
     ayushFields.forEach((field) => {
@@ -203,6 +267,7 @@ function convertToFhirR4Bundle(intake) {
             text: `AYUSH ${field.toUpperCase()} Examination`
           },
           subject: { reference: patientRefId },
+          encounter: { reference: encounterRefId },
           effectiveDateTime: timestamp,
           valueString: String(intake.ayushParameters[field])
         };
@@ -212,7 +277,7 @@ function convertToFhirR4Bundle(intake) {
     });
   }
 
-  // 4. Conditions - Chief Complaints & Past Diagnoses
+  // 5. Conditions - Chief Complaints & Past Diagnoses
   if (intake.chiefComplaints && Array.isArray(intake.chiefComplaints)) {
     intake.chiefComplaints.forEach((cc) => {
       const condId = generateUUID();
@@ -231,6 +296,7 @@ function convertToFhirR4Bundle(intake) {
           text: `${cc.symptom} (${cc.duration || 'duration unstated'}, severity: ${cc.severity || 'moderate'})`
         },
         subject: { reference: patientRefId },
+        encounter: { reference: encounterRefId },
         recordedDate: timestamp
       };
       bundleEntries.push({ fullUrl: condId, resource: condition });
@@ -260,7 +326,7 @@ function convertToFhirR4Bundle(intake) {
     });
   }
 
-  // 5. DocumentReference - Scanned Prescriptions & Lab Records (Task 2 OCR)
+  // 6. DocumentReference - Scanned Prescriptions & Lab Records (OCR)
   if (intake.ocrDocuments && Array.isArray(intake.ocrDocuments)) {
     intake.ocrDocuments.forEach((doc) => {
       const docRefId = generateUUID();
@@ -298,7 +364,7 @@ function convertToFhirR4Bundle(intake) {
     });
   }
 
-  // 6. Composition Resource - ABDM Health Document Wrapper
+  // 7. Composition Resource - ABDM Health Document Wrapper
   const compositionId = generateUUID();
   const composition = {
     resourceType: "Composition",
@@ -316,6 +382,7 @@ function convertToFhirR4Bundle(intake) {
       text: "Pre-Consultation Kiosk Clinical Summary"
     },
     subject: { reference: patientRefId },
+    encounter: { reference: encounterRefId },
     date: timestamp,
     author: [
       {
@@ -359,6 +426,76 @@ function convertToFhirR4Bundle(intake) {
   return fhirBundle;
 }
 
+/**
+ * Consent-aware FHIR Bundle generator.
+ * Wraps convertToFhirR4Bundle and filters resources based on patient consent settings.
+ *
+ * @param {Object} encounterData - ProvisionalIntake record
+ * @param {Object} consentSettings - { vitalsOnly: bool, fullHistory: bool, ayushNotes: bool }
+ * @returns {Object} Consent-filtered HL7 FHIR R4 Bundle
+ */
+function generateFHIRBundle(encounterData, consentSettings = {}) {
+  const fullBundle = convertToFhirR4Bundle(encounterData);
+
+  const { vitalsOnly = false, fullHistory = true, ayushNotes = true } = consentSettings;
+
+  if (!vitalsOnly && fullHistory && ayushNotes) {
+    // All consents granted — return complete bundle
+    return fullBundle;
+  }
+
+  // Filter entries based on consent settings
+  const filteredEntries = fullBundle.entry.filter(entry => {
+    const rt = entry.resource?.resourceType;
+
+    // Always include: Bundle envelope resources
+    if (rt === 'Composition' || rt === 'Patient' || rt === 'Encounter') return true;
+
+    // Vitals-only mode: keep only vital-signs Observations
+    if (vitalsOnly) {
+      if (rt === 'Observation') {
+        const cat = entry.resource?.category?.[0]?.coding?.[0]?.code;
+        return cat === 'vital-signs';
+      }
+      return false;
+    }
+
+    // If AYUSH notes are excluded, strip AYUSH-tagged Observations
+    if (!ayushNotes && rt === 'Observation') {
+      const isAyush = entry.resource?.meta?.tag?.some(t => t.code === 'AYUSH-DASHAVIDHA');
+      if (isAyush) return false;
+    }
+
+    // If full history is excluded, strip past Conditions (encounter-diagnosis category)
+    if (!fullHistory && rt === 'Condition') {
+      const cat = entry.resource?.category?.[0]?.coding?.[0]?.code;
+      if (cat === 'encounter-diagnosis') return false;
+    }
+
+    return true;
+  });
+
+  // Rebuild composition sections to only reference included entries
+  const includedUrls = new Set(filteredEntries.map(e => e.fullUrl));
+  const compositionEntry = filteredEntries.find(e => e.resource?.resourceType === 'Composition');
+  if (compositionEntry) {
+    compositionEntry.resource.section = compositionEntry.resource.section.map(sec => ({
+      ...sec,
+      entry: (sec.entry || []).filter(ref => includedUrls.has(ref.reference))
+    }));
+    // Add consent provenance note
+    compositionEntry.resource.extension = [
+      {
+        url: "https://medikiosk.in/fhir/extensions/consent-settings",
+        valueString: JSON.stringify({ vitalsOnly, fullHistory, ayushNotes })
+      }
+    ];
+  }
+
+  return { ...fullBundle, entry: filteredEntries };
+}
+
 module.exports = {
-  convertToFhirR4Bundle
+  convertToFhirR4Bundle,
+  generateFHIRBundle
 };

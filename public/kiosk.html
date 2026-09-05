@@ -29,23 +29,24 @@
       <div class="form-grid">
         <div class="form-group">
           <label for="fullName">Full Name *</label>
-          <input type="text" id="fullName" value="Ramesh Chandra Sharma" placeholder="Enter patient name" required />
+          <input type="text" id="fullName" placeholder="Enter patient name" required />
         </div>
         <div class="form-group">
           <label for="age">Age (Years) *</label>
-          <input type="number" id="age" value="54" min="1" max="120" required />
+          <input type="number" id="age" min="1" max="120" required />
         </div>
         <div class="form-group">
           <label for="gender">Gender *</label>
           <select id="gender">
-            <option value="M" selected>Male</option>
+            <option>--Select Gender--</option>
+            <option value="M">Male</option>
             <option value="F">Female</option>
             <option value="O">Other</option>
           </select>
         </div>
         <div class="form-group">
           <label for="abhaId">ABHA ID (Ayushman Bharat Health Account)</label>
-          <input type="text" id="abhaId" value="ABHA-91-8273-4651-0982" placeholder="e.g. ABHA-12-3456-7890-1234" />
+          <input type="text" id="abhaId" placeholder="e.g. ABHA-12-3456-7890-1234" />
         </div>
       </div>
     </section>
@@ -63,23 +64,24 @@
         <div class="form-grid">
           <div class="form-group" style="grid-column: span 2;">
             <label for="chiefComplaint">Chief Complaint *</label>
-            <input type="text" id="chiefComplaint" value="Acute Frontal Headache & Dizziness" placeholder="Describe primary symptoms" />
+            <input type="text" id="chiefComplaint" placeholder="Describe primary symptoms" />
           </div>
           <div class="form-group">
             <label for="duration">Duration</label>
-            <input type="text" id="duration" value="3 days" placeholder="e.g. 3 days, 2 weeks" />
+            <input type="text" id="duration" placeholder="e.g. 3 days, 2 weeks" />
           </div>
           <div class="form-group">
             <label for="severity">Severity</label>
             <select id="severity">
+              <option>--Select Severity--</option>
               <option value="Mild">Mild</option>
               <option value="Moderate">Moderate</option>
-              <option value="Severe" selected>Severe</option>
+              <option value="Severe">Severe</option>
             </select>
           </div>
           <div class="form-group" style="grid-column: span 2;">
             <label for="hpiNarrative">History of Present Illness (HPI)</label>
-            <textarea id="hpiNarrative" rows="2" placeholder="Details about symptom onset, character, aggravating factors...">Progressive headache over last 3 days, lightheadedness upon standing.</textarea>
+            <textarea id="hpiNarrative" rows="2" placeholder="Details about symptom onset, character, aggravating factors..."></textarea>
           </div>
         </div>
       </div>
@@ -92,14 +94,14 @@
             <select id="ayushAgni">
               <option value="Sama (Balanced Digestive Fire)">Sama (Balanced)</option>
               <option value="Manda (Slow/Sluggish)">Manda (Slow)</option>
-              <option value="Tikshnagni (Intense/High)" selected>Tikshnagni (Intense/High Appetite)</option>
+              <option value="Tikshnagni (Intense/High)">Tikshnagni (Intense/High Appetite)</option>
               <option value="Vishama (Irregular/Fluctuating)">Vishama (Irregular)</option>
             </select>
           </div>
           <div class="form-group">
             <label for="ayushKoshtha">Koshtha (Bowel Habit)</label>
             <select id="ayushKoshtha">
-              <option value="Madhyama (Normal Bowel Habit)" selected>Madhyama (Normal)</option>
+              <option value="Madhyama (Normal Bowel Habit)" >Madhyama (Normal)</option>
               <option value="Krura (Hard/Constipated)">Krura (Hard/Constipated)</option>
               <option value="Mridu (Soft/Frequent)">Mridu (Soft/Frequent)</option>
             </select>
@@ -107,14 +109,14 @@
           <div class="form-group">
             <label for="ayushMutra">Mutra (Urine Characteristics)</label>
             <select id="ayushMutra">
-              <option value="Prabhuta Mutrata (Increased Frequency)" selected>Prabhuta Mutrata (Increased Frequency)</option>
+              <option value="Prabhuta Mutrata (Increased Frequency)">Prabhuta Mutrata (Increased Frequency)</option>
               <option value="Normal Clear">Normal Clear</option>
               <option value="Alpa Mutra (Decreased Frequency)">Alpa Mutra (Decreased)</option>
             </select>
           </div>
           <div class="form-group">
             <label for="ayushAhara">Ahara-Vihara (Diet & Lifestyle Impact)</label>
-            <input type="text" id="ayushAhara" value="High spice & sodium intake, irregular sleep" placeholder="Dietary habits, sleep, lifestyle notes" />
+            <input type="text" id="ayushAhara" value="text" placeholder="Dietary habits, sleep, lifestyle notes" />
           </div>
         </div>
 

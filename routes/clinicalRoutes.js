@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const ProvisionalIntake = require('../models/ProvisionalIntake');
 const AuditLog = require('../models/AuditLog');
 const hprAuthMiddleware = require('../middleware/hprAuth');
-const { convertToFhirR4Bundle } = require('../services/fhirMapper');
+const { convertToFhirR4Bundle, generateFHIRBundle } = require('../services/fhirMapper');
 const { syncToAbdmNetwork } = require('../services/abdmSyncService');
 const { isMongoConnected, memoryStore } = require('../config/db');
 
@@ -516,6 +516,13 @@ async function handleFhirExport(req, res) {
   try {
     const intakeId = req.params.intakeId || req.params.id;
 
+    // Consent settings from query parameters
+    const consentSettings = {
+      vitalsOnly: req.query.vitalsOnly === 'true',
+      fullHistory: req.query.fullHistory !== 'false',
+      ayushNotes: req.query.ayushNotes !== 'false'
+    };
+
     let record = null;
     if (isMongoConnected()) {
       record = await ProvisionalIntake.findOne({
@@ -534,7 +541,7 @@ async function handleFhirExport(req, res) {
       });
     }
 
-    const bundle = record.fhirBundle || convertToFhirR4Bundle(record);
+    const bundle = generateFHIRBundle(record, consentSettings);
 
     res.setHeader('Content-Type', 'application/fhir+json');
     return res.status(200).send(JSON.stringify(bundle, null, 2));

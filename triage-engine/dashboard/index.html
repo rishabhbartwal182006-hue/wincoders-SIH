@@ -5,6 +5,104 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MediKiosk | Doctor Command Center</title>
   <link rel="stylesheet" href="/dashboard/styles.css" />
+  <style>
+    .badge-provisional {
+      background: #f59e0b;
+      color: #000;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge-verified {
+      background: #16a34a;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .soap-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .soap-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .completeness-bar-container {
+      background: #334155;
+      border-radius: 10px;
+      height: 10px;
+      width: 100%;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .completeness-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #16a34a);
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+    .omission-chip {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      display: inline-block;
+      margin: 2px;
+    }
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .matrix-table th, .matrix-table td {
+      border: 1px solid #334155;
+      padding: 8px;
+      text-align: center;
+    }
+    .matrix-table th {
+      background: #1e293b;
+      color: #38bdf8;
+    }
+    .risk-high { color: #ef4444; font-weight: 700; }
+    .risk-medium { color: #f59e0b; font-weight: 700; }
+    .risk-low { color: #16a34a; font-weight: 700; }
+    .btn-action-primary {
+      background: linear-gradient(135deg, #16a34a, #0284c7);
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+    }
+    .btn-action-secondary {
+      background: #334155;
+      color: #38bdf8;
+      border: 1px solid #0284c7;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      width: 100%;
+    }
+  </style>
 </head>
 <body>
   <div id="toast-root" aria-live="polite"></div>
@@ -16,12 +114,13 @@
       </div>
       <nav>
         <button class="nav-item active" data-view="queue"><span>▦</span>Live Queue</button>
+        <button class="nav-item" data-view="alerts"><span>⚠</span>Critical Alerts</button>
         <button class="nav-item" data-view="audit"><span>☷</span>Audit Trail</button>
         <a href="/kiosk.html" target="_blank" style="text-decoration:none;"><button class="nav-item"><span>🖥</span>Patient Intake Terminal</button></a>
       </nav>
       <div class="sidebar-foot">
         <div class="system-state"><i id="connection-dot"></i><span id="connection-text">Connecting…</span></div>
-        <div class="system-note">Real-time triage stream<br/>Socket.IO + HPR Biometric Gate</div>
+        <div class="system-note">Real-time triage stream<br/>Socket.IO + HPR Lock + SOAP</div>
       </div>
     </aside>
 
@@ -30,7 +129,7 @@
         <div>
           <div class="eyebrow">CLINICAL OPERATIONS</div>
           <h1>Live Patient Queue</h1>
-          <p>Monitor incoming kiosk encounters, enforce HPR write-lock, and export ABDM FHIR R4 Bundles.</p>
+          <p>Real-time triage queue, clinical discrepancy checking, SOAP EMR view, and Post-OPD care loop.</p>
         </div>
         <div class="top-actions">
           <button class="ghost-btn" id="refresh-btn">↻ Refresh</button>
@@ -63,7 +162,7 @@
           <div class="empty-state">
             <div class="empty-icon">◉</div>
             <h3>Select an encounter</h3>
-            <p>Choose a patient from the queue to inspect vitals, symptoms, HPR write-lock authentication, and export FHIR R4 Bundles.</p>
+            <p>Choose a patient from the queue to inspect vitals, discrepancies, Interactive SOAP View, HPR Write-Lock, and Post-OPD Care Loop.</p>
           </div>
         </aside>
       </section>

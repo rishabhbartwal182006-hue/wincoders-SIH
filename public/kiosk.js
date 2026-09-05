@@ -38,8 +38,8 @@
 
   // Simulated Hardware Controls
   $('btnMeasureBP').addEventListener('click', () => {
-    const sysList = [120, 135, 145, 165, 170];
-    const diaList = [80, 88, 92, 102, 108];
+    const sysList = [120, 135, 145, 165, 185];
+    const diaList = [80, 88, 92, 102, 112];
     const idx = Math.floor(Math.random() * sysList.length);
     vitalsState.systolic = sysList[idx];
     vitalsState.diastolic = diaList[idx];
@@ -48,7 +48,7 @@
   });
 
   $('btnCaptureSpO2').addEventListener('click', () => {
-    const spo2List = [98, 97, 95, 92, 99];
+    const spo2List = [98, 97, 94, 88, 99];
     const hrList = [72, 84, 88, 96, 110];
     const idx = Math.floor(Math.random() * spo2List.length);
     vitalsState.spo2 = spo2List[idx];
@@ -59,12 +59,51 @@
   });
 
   $('btnReadGlucose').addEventListener('click', () => {
-    const glucList = [110, 145, 185, 245, 280];
+    const glucList = [110, 145, 185, 245, 310];
     const idx = Math.floor(Math.random() * glucList.length);
     vitalsState.bloodGlucose = glucList[idx];
     $('dispGlucose').textContent = `${vitalsState.bloodGlucose}`;
     alert(`[Module 3 Hardware Sensor]: Glucometer reading captured -> ${vitalsState.bloodGlucose} mg/dL`);
   });
+
+  /**
+   * Prompt 1: Dynamic Triage Threshold Evaluator
+   * Evaluates BP, SpO2, Glucose, and Severity against clinical thresholds
+   */
+  function calculateClinicalTriageLevel(vitals, severity) {
+    const sys = Number(vitals.systolic);
+    const dia = Number(vitals.diastolic);
+    const spo2 = Number(vitals.spo2);
+    const glucose = Number(vitals.bloodGlucose);
+
+    // EMERGENCY Thresholds: BP > 180 (or Dia > 110), SpO2 < 90%, Glucose > 300 mg/dL
+    if (sys > 180 || dia > 110 || spo2 < 90 || glucose > 300 || (severity === 'Severe' && (sys >= 160 || spo2 < 92))) {
+      return {
+        triageLevel: 'EMERGENCY',
+        urgencyScore: 10,
+        action: 'IMMEDIATE_DOCTOR_ALERT',
+        reason: 'Critical physiological threshold exceeded (Stage 3 Crisis BP / Severe Hypoxemia / Hyperglycemia).'
+      };
+    }
+
+    // URGENT Thresholds: BP > 140, SpO2 < 95%, Glucose > 200 mg/dL, or Severe symptoms
+    if (sys > 140 || dia > 90 || spo2 < 95 || glucose > 200 || severity === 'Severe') {
+      return {
+        triageLevel: 'URGENT',
+        urgencyScore: 7,
+        action: 'PRIORITY_REVIEW',
+        reason: 'Elevated clinical risk parameters (Stage 1/2 Hypertension / Moderate Hypoxemia / Elevated Glucose).'
+      };
+    }
+
+    // ROUTINE
+    return {
+      triageLevel: 'ROUTINE',
+      urgencyScore: 3,
+      action: 'STANDARD_QUEUE',
+      reason: 'Stable physiological vitals within normal parameters.'
+    };
+  }
 
   // Submit Handler
   $('btnSubmitIntake').addEventListener('click', async () => {
@@ -73,10 +112,14 @@
     const gender = $('gender').value || 'M';
     const abhaId = $('abhaId').value.trim() || `ABHA-${Date.now()}`;
     const intakeId = `INTAKE-${Date.now()}`;
+    const severity = $('severity').value || 'Moderate';
 
     const timestamp = new Date().toISOString();
     const isStaff = $('staffModeToggle').checked;
     const provenanceType = isStaff ? 'touch-selected' : 'patient-spoken';
+
+    // Calculate Triage Level dynamically via Threshold Engine
+    const triageEval = calculateClinicalTriageLevel(vitalsState, severity);
 
     const payload = {
       intakeId: intakeId,
@@ -106,7 +149,7 @@
         {
           symptom: $('chiefComplaint').value || 'General Consultation',
           duration: $('duration').value || '3 days',
-          severity: $('severity').value || 'Moderate',
+          severity: severity,
           provenanceMeta: { provenance: provenanceType, confidence: 0.95, timestamp }
         }
       ],
@@ -123,9 +166,10 @@
         provenanceMeta: { provenance: 'touch-selected', confidence: 1.0, timestamp }
       },
       triage: {
-        triageLevel: vitalsState.systolic >= 160 || vitalsState.bloodGlucose >= 240 ? 'PRIORITY' : 'ROUTINE',
-        urgencyScore: vitalsState.systolic >= 160 ? 7 : 4,
-        recommendedDepartment: activeMode === 'AYUSH' ? 'AYUSH OPD / Kayachikitsa' : 'General Medicine'
+        triageLevel: triageEval.triageLevel,
+        urgencyScore: triageEval.urgencyScore,
+        recommendedDepartment: activeMode === 'AYUSH' ? 'AYUSH OPD / Kayachikitsa' : 'General Medicine',
+        protocolNotes: triageEval.reason
       },
       status: 'PROVISIONAL'
     };
@@ -140,16 +184,26 @@
       const resData = await response.json();
 
       if (response.ok && resData.success) {
-        // Emit Socket Event for real-time dashboard update
+        // Emit Prompt 1 Socket Event: kiosk:intake_submitted
         if (socket) {
-          socket.emit('PATIENT_EVENT_RECEIVED', {
+          socket.emit('kiosk:intake_submitted', {
             sessionId: intakeId,
+            intakeId: intakeId,
             patientId: abhaId,
+            patientName: fullName,
+            triageLevel: triageEval.triageLevel,
+            urgencyScore: triageEval.urgencyScore,
+            timestamp: timestamp,
+            vitals: payload.vitals,
+            symptoms: payload.chiefComplaints,
             payload: payload
           });
+
+          // Also emit legacy event for backward compatibility
+          socket.emit('PATIENT_EVENT_RECEIVED', { sessionId: intakeId, patientId: abhaId, payload });
         }
 
-        alert(`✓ Patient Intake Successfully Submitted!\n\nIntake ID: ${resData.data.intakeId}\nABHA ID: ${resData.data.abhaId}\nStatus: PROVISIONAL\n\nReal-time alert sent to Doctor Command Center Dashboard.`);
+        alert(`✓ Patient Intake Submitted!\n\nIntake ID: ${resData.data.intakeId}\nABHA ID: ${resData.data.abhaId}\nTriage Status: ${triageEval.triageLevel}\nStatus: PROVISIONAL\n\nSocket.IO event 'kiosk:intake_submitted' sent to Doctor Command Center.`);
       } else {
         alert(`Intake submission failed: ${resData.message || 'Server error'}`);
       }
