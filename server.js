@@ -11,6 +11,7 @@ const { connectDB } = require('./config/db');
 const kioskRoutes = require('./routes/kioskRoutes');
 const clinicalRoutes = require('./routes/clinicalRoutes');
 const hprRoutes = require('./routes/hprRoutes');
+const sessionRoutes = require('./routes/sessionRoutes');
 const hprAuthMiddleware = require('./middleware/hprAuth');
 
 const app = express();
@@ -48,6 +49,11 @@ app.get('/kiosk', (req, res) => {
 app.use('/api/v1/kiosk', kioskRoutes);
 app.use('/api/v1/clinical', clinicalRoutes);
 app.use('/api/v1/hpr', hprRoutes);
+
+// openapi-spec-shaped session lifecycle API (/api/v1/sessions/*, /api/v1/auth/staff-login)
+// Coexists with the routes above — see services/specAdapter.js for how the two
+// data shapes bridge into the same discrepancy/FHIR logic.
+app.use('/api/v1', sessionRoutes);
 
 // Compatibility Base Routes for Frontend Event APIs (/api/events/...)
 app.use('/api/events', kioskRoutes);
