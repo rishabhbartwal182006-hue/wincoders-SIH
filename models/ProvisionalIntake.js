@@ -19,7 +19,7 @@ const ProvenanceMetaSchema = new mongoose.Schema({
 }, { _id: false });
 
 const VitalValueSchema = new mongoose.Schema({
-  value: { type: SchemaValue = mongoose.Schema.Types.Mixed, required: true },
+  value: { type: mongoose.Schema.Types.Mixed, required: true },
   unit: { type: String, required: true },
   provenanceMeta: ProvenanceMetaSchema
 }, { _id: false });
