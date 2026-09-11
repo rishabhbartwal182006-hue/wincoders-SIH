@@ -8,7 +8,22 @@
 </head>
 <body>
 
-  <div class="kiosk-container">
+  <div style="max-width: 1000px; margin: 16px auto 0 auto; padding: 0 20px;">
+    <div style="display: flex; gap: 10px; background: rgba(255,255,255,0.9); padding: 8px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+      <button type="button" id="tabNavAltitude" style="flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: 800; font-size: 15px; cursor: pointer; background: #0f766e; color: #ffffff; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        🏔️ Altitude-Aware Intake Terminal (React MVP)
+      </button>
+      <button type="button" id="tabNavStandard" style="flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: 800; font-size: 15px; cursor: pointer; background: #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        📋 Demographics & AYUSH Assessment
+      </button>
+    </div>
+  </div>
+
+  <!-- React Altitude Kiosk Root -->
+  <div id="react-kiosk-root"></div>
+
+  <!-- Legacy Intake Container (Collapsible) -->
+  <div class="kiosk-container" id="standardKioskContainer" style="display: none;">
     <!-- Header -->
     <header class="kiosk-header">
       <div class="kiosk-title">
@@ -166,6 +181,36 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/vendor/react.production.min.js"></script>
+  <script src="/vendor/react-dom.production.min.js"></script>
   <script src="/kiosk.js"></script>
+  <script src="/kiosk-react.js"></script>
+
+  <script>
+    const tabAltitude = document.getElementById('tabNavAltitude');
+    const tabStandard = document.getElementById('tabNavStandard');
+    const reactRoot = document.getElementById('react-kiosk-root');
+    const standardContainer = document.getElementById('standardKioskContainer');
+
+    if (tabAltitude && tabStandard) {
+      tabAltitude.addEventListener('click', () => {
+        tabAltitude.style.background = '#0f766e';
+        tabAltitude.style.color = '#ffffff';
+        tabStandard.style.background = '#e2e8f0';
+        tabStandard.style.color = '#475569';
+        reactRoot.style.display = 'block';
+        standardContainer.style.display = 'none';
+      });
+
+      tabStandard.addEventListener('click', () => {
+        tabStandard.style.background = '#0f766e';
+        tabStandard.style.color = '#ffffff';
+        tabAltitude.style.background = '#e2e8f0';
+        tabAltitude.style.color = '#475569';
+        reactRoot.style.display = 'none';
+        standardContainer.style.display = 'block';
+      });
+    }
+  </script>
 </body>
 </html>

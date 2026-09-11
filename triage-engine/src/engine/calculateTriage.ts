@@ -1,6 +1,7 @@
-import { TriggeredRule } from '../rules/types.js';
+import { TriggeredRule, RulePriority } from '../rules/types.js';
 import { TriageResult, TriageLevel, TriageAction } from '../schemas/triageResult.js';
 import { SessionState } from './sessionState.js';
+import { evaluateAltitudeRules } from '../rules/environment/altitudeRules.js';
 
 /**
  * Triage Calculation Layer
@@ -18,8 +19,31 @@ export function calculateTriage(
   const timestamp = new Date().toISOString();
   const resultId = `trg_${sessionId}_${Date.now()}`;
 
-  const emergencyRules = triggeredRules.filter((r) => r.priority === 'EMERGENCY');
-  const urgentRules = triggeredRules.filter((r) => r.priority === 'URGENT');
+  // Evaluate altitude-aware clinical rules if sessionState is present
+  const altEval = evaluateAltitudeRules(
+    sessionState?.vitals,
+    sessionState?.environment || { altitudeMeters: 2438 },
+    [
+      sessionState?.symptoms.primary?.symptomName,
+      ...(sessionState?.symptoms.allAssociatedSymptoms || []),
+      ...(sessionState?.symptoms.list || []).map((s: any) => s.symptomName)
+    ]
+  );
+
+  const altitudeTriggeredRules: TriggeredRule[] = altEval.map(ar => ({
+    id: ar.flagId,
+    name: ar.name,
+    category: 'environment' as const,
+    priority: (ar.priority === 'EMERGENCY' ? 'EMERGENCY' : 'URGENT') as RulePriority,
+    action: ar.action,
+    reason: ar.reason,
+    matchedConditions: ar.triggeredByRefs
+  }));
+
+  const allTriggered = [...triggeredRules, ...altitudeTriggeredRules];
+
+  const emergencyRules = allTriggered.filter((r) => r.priority === 'EMERGENCY');
+  const urgentRules = allTriggered.filter((r) => r.priority === 'URGENT');
 
   let triageLevel: TriageLevel = 'ROUTINE';
   let action: TriageAction = 'STANDARD_QUEUE';
@@ -55,7 +79,7 @@ export function calculateTriage(
     }
   }
 
-  const triggeredRuleIds = triggeredRules.map((r) => r.id);
+  const triggeredRuleIds = allTriggered.map((r) => r.id);
 
   return {
     id: resultId,
@@ -67,7 +91,7 @@ export function calculateTriage(
     reason,
     timestamp,
     metadata: {
-      redFlagCount: triggeredRules.length,
+      redFlagCount: allTriggered.length,
       contributingEventIds: sessionState?.events.map((e) => e.id)
     }
   };

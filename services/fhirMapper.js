@@ -40,16 +40,16 @@ function convertToFhirR4Bundle(intake) {
           ]
         },
         system: "https://healthid.abdm.gov.in",
-        value: intake.abhaId
+        value: intake.abhaId || intake.patient?.abha_id || intake.session_id || '91-0000-0000-0000'
       }
     ],
     name: [
       {
-        text: intake.patientDemographics?.fullName || "Anonymous Patient"
+        text: intake.patientDemographics?.fullName || intake.patient?.name || "Anonymous Patient"
       }
     ],
-    gender: intake.patientDemographics?.gender === 'M' ? 'male' : intake.patientDemographics?.gender === 'F' ? 'female' : 'other',
-    birthDate: intake.patientDemographics?.dob || (intake.patientDemographics?.age ? `${new Date().getFullYear() - intake.patientDemographics.age}-01-01` : undefined)
+    gender: (intake.patientDemographics?.gender === 'M' || intake.patient?.gender === 'male') ? 'male' : (intake.patientDemographics?.gender === 'F' || intake.patient?.gender === 'female') ? 'female' : 'other',
+    birthDate: intake.patientDemographics?.dob || (intake.patientDemographics?.age ? `${new Date().getFullYear() - intake.patientDemographics.age}-01-01` : (intake.patient?.age ? `${new Date().getFullYear() - intake.patient.age}-01-01` : undefined))
   };
 
   // 2. Encounter Resource
@@ -104,9 +104,50 @@ function convertToFhirR4Bundle(intake) {
   };
 
   // 3. Observations - Vitals
-  if (intake.vitals) {
+  const env = intake.environment || {
+    altitudeMeters: 2438,
+    altitudeFeet: 8000,
+    altitudeSource: "facility_config",
+    acclimatizationStatus: "unacclimatized"
+  };
+  const altitudeContextString = `${env.altitudeMeters || 2438} m; source=${env.altitudeSource || 'facility_config'}; acclimatization=${env.acclimatizationStatus || 'unacclimatized'}`;
+  const algorithmVersion = "altitude-mvp-v1";
+
+  let vitals = intake.vitals;
+  if (Array.isArray(intake.vitals)) {
+    vitals = {};
+    const sys = intake.vitals.find(v => v.type === 'bp_systolic');
+    const dia = intake.vitals.find(v => v.type === 'bp_diastolic');
+    if (sys || dia) {
+      vitals.bloodPressure = {
+        systolic: sys ? { value: sys.value, unit: sys.unit || 'mmHg', altitudeContext: sys.altitudeContext } : undefined,
+        diastolic: dia ? { value: dia.value, unit: dia.unit || 'mmHg', altitudeContext: dia.altitudeContext } : undefined
+      };
+    }
+    const spo2 = intake.vitals.find(v => v.type === 'spo2');
+    if (spo2) {
+      vitals.spo2 = {
+        value: spo2.value,
+        unit: spo2.unit || '%',
+        altitudeContext: spo2.altitudeContext
+      };
+      vitals.pulseOximetry = { spo2: vitals.spo2 };
+    }
+    const hr = intake.vitals.find(v => v.type === 'heart_rate');
+    if (hr) {
+      vitals.heartRate = {
+        value: hr.value,
+        unit: hr.unit || 'bpm',
+        altitudeContext: hr.altitudeContext
+      };
+    }
+  } else if (vitals && vitals.pulseOximetry?.spo2 && !vitals.spo2) {
+    vitals.spo2 = vitals.pulseOximetry.spo2;
+  }
+
+  if (vitals) {
     // Blood Pressure Observation
-    if (intake.vitals.bloodPressure) {
+    if (vitals.bloodPressure) {
       const bpObsId = generateUUID();
       const bpObs = {
         resourceType: "Observation",
@@ -114,6 +155,16 @@ function convertToFhirR4Bundle(intake) {
         meta: {
           profile: ["https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"]
         },
+        extension: [
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/altitude-context",
+            valueString: altitudeContextString
+          },
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/algorithm-version",
+            valueString: algorithmVersion
+          }
+        ],
         status: "final",
         category: [
           {
@@ -139,31 +190,36 @@ function convertToFhirR4Bundle(intake) {
         subject: { reference: patientRefId },
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
+        note: [
+          {
+            text: `Altitude-adjusted interpretation: BP normal range 90-120/60-80 mmHg not adjusted upward for altitude (standard AHA/ICMR guidelines).`
+          }
+        ],
         component: []
       };
 
-      if (intake.vitals.bloodPressure.systolic) {
+      if (vitals.bloodPressure.systolic) {
         bpObs.component.push({
           code: {
             coding: [{ system: "http://loinc.org", code: "8480-6", display: "Systolic blood pressure" }]
           },
           valueQuantity: {
-            value: Number(intake.vitals.bloodPressure.systolic.value),
-            unit: intake.vitals.bloodPressure.systolic.unit || "mmHg",
+            value: Number(vitals.bloodPressure.systolic.value),
+            unit: vitals.bloodPressure.systolic.unit || "mmHg",
             system: "http://unitsofmeasure.org",
             code: "mm[Hg]"
           }
         });
       }
 
-      if (intake.vitals.bloodPressure.diastolic) {
+      if (vitals.bloodPressure.diastolic) {
         bpObs.component.push({
           code: {
             coding: [{ system: "http://loinc.org", code: "8462-4", display: "Diastolic blood pressure" }]
           },
           valueQuantity: {
-            value: Number(intake.vitals.bloodPressure.diastolic.value),
-            unit: intake.vitals.bloodPressure.diastolic.unit || "mmHg",
+            value: Number(vitals.bloodPressure.diastolic.value),
+            unit: vitals.bloodPressure.diastolic.unit || "mmHg",
             system: "http://unitsofmeasure.org",
             code: "mm[Hg]"
           }
@@ -175,21 +231,51 @@ function convertToFhirR4Bundle(intake) {
     }
 
     // SpO2 Observation
-    if (intake.vitals.spo2) {
+    if (vitals.spo2) {
       const spo2ObsId = generateUUID();
+      const spo2Val = Number(vitals.spo2.value);
+      const spo2Ctx = vitals.spo2.altitudeContext;
+      let spo2NoteText = '';
+      if (spo2Ctx && spo2Ctx.reason) {
+        spo2NoteText = `Altitude-adjusted interpretation: ${spo2Ctx.reason}`;
+      } else if (spo2Val < 92) {
+        const hasDangerSymptom = (intake.chiefComplaints || []).some(c => {
+          const s = String(c.symptom || '').toLowerCase();
+          return s.includes('breathless') || s.includes('chest') || s.includes('tightness') || s.includes('confusion');
+        });
+        spo2NoteText = `Altitude-adjusted interpretation: below expected range at ${env.altitudeMeters || 2438} m; ${hasDangerSymptom ? 'red flag due to breathlessness.' : 'borderline desaturation.'}`;
+      } else {
+        spo2NoteText = `Altitude-adjusted interpretation: SpO2 (${spo2Val}%) is within expected range at ${env.altitudeMeters || 2438} m.`;
+      }
+
       const spo2Obs = {
         resourceType: "Observation",
         id: spo2ObsId.replace("urn:uuid:", ""),
         meta: { profile: ["https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"] },
+        extension: [
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/altitude-context",
+            valueString: altitudeContextString
+          },
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/algorithm-version",
+            valueString: algorithmVersion
+          }
+        ],
         status: "final",
         category: [{ coding: [{ system: "http://terminology.hl7.org/CodeSystem/observation-category", code: "vital-signs" }] }],
         code: { coding: [{ system: "http://loinc.org", code: "2708-6", display: "Oxygen saturation in Arterial blood" }] },
         subject: { reference: patientRefId },
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
+        note: [
+          {
+            text: spo2NoteText
+          }
+        ],
         valueQuantity: {
-          value: Number(intake.vitals.spo2.value),
-          unit: intake.vitals.spo2.unit || "%",
+          value: spo2Val,
+          unit: vitals.spo2.unit || "%",
           system: "http://unitsofmeasure.org",
           code: "%"
         }
@@ -199,21 +285,37 @@ function convertToFhirR4Bundle(intake) {
     }
 
     // Heart Rate Observation (LOINC 8867-4)
-    if (intake.vitals.heartRate) {
+    if (vitals.heartRate) {
       const hrObsId = generateUUID();
+      const hrVal = Number(vitals.heartRate.value);
       const hrObs = {
         resourceType: "Observation",
         id: hrObsId.replace("urn:uuid:", ""),
         meta: { profile: ["https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"] },
+        extension: [
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/altitude-context",
+            valueString: altitudeContextString
+          },
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/algorithm-version",
+            valueString: algorithmVersion
+          }
+        ],
         status: "final",
         category: [{ coding: [{ system: "http://terminology.hl7.org/CodeSystem/observation-category", code: "vital-signs" }] }],
         code: { coding: [{ system: "http://loinc.org", code: "8867-4", display: "Heart rate" }] },
         subject: { reference: patientRefId },
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
+        note: [
+          {
+            text: `Altitude-adjusted interpretation: heart rate (${hrVal} bpm) assessed against altitude-adjusted baseline [65-115 bpm] at ${env.altitudeMeters || 2438} m.`
+          }
+        ],
         valueQuantity: {
-          value: Number(intake.vitals.heartRate.value),
-          unit: intake.vitals.heartRate.unit || "bpm",
+          value: hrVal,
+          unit: vitals.heartRate.unit || "bpm",
           system: "http://unitsofmeasure.org",
           code: "/min"
         }
@@ -223,7 +325,7 @@ function convertToFhirR4Bundle(intake) {
     }
 
     // Blood Glucose Observation
-    if (intake.vitals.bloodGlucose) {
+    if (vitals.bloodGlucose) {
       const bgObsId = generateUUID();
       const bgObs = {
         resourceType: "Observation",
@@ -236,8 +338,8 @@ function convertToFhirR4Bundle(intake) {
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
         valueQuantity: {
-          value: Number(intake.vitals.bloodGlucose.value),
-          unit: intake.vitals.bloodGlucose.unit || "mg/dL",
+          value: Number(vitals.bloodGlucose.value),
+          unit: vitals.bloodGlucose.unit || "mg/dL",
           system: "http://unitsofmeasure.org",
           code: "mg/dL"
         }

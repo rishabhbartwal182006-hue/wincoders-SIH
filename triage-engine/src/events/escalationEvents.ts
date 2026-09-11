@@ -6,7 +6,8 @@ import {
   EscalationRequiredPayload,
   QuestionnaireInterruptedPayload,
   RedFlagDetectedPayload,
-  TriageUpdatedPayload
+  TriageUpdatedPayload,
+  AltitudeEscalationPayload
 } from './socketEvents.js';
 
 /**
@@ -62,4 +63,30 @@ export function broadcastEscalation(
     previousTriageLevel: previousLevel
   };
   io.to(dashboardRoom).to(sessionRoom).emit(SOCKET_EVENTS.SERVER.TRIAGE_UPDATED, triageUpdatePayload);
+}
+
+/**
+ * Broadcasts altitude red-flag escalation to Doctor Dashboard and Kiosk clients.
+ */
+export function broadcastAltitudeEscalation(
+  io: Server,
+  payload: AltitudeEscalationPayload
+): void {
+  const sessionRoom = `session:${payload.sessionId}`;
+  const dashboardRoom = 'dashboard';
+
+  io.to(dashboardRoom).to(sessionRoom).emit(SOCKET_EVENTS.SERVER.ALTITUDE_RED_FLAG, payload);
+  io.emit(SOCKET_EVENTS.SERVER.ALTITUDE_RED_FLAG, payload);
+
+  const escalationPayload: EscalationRequiredPayload = {
+    sessionId: payload.sessionId,
+    patientId: payload.patientId,
+    triageLevel: 'EMERGENCY',
+    triggeredRules: ['RULE_ALTITUDE_HYPOXIA_DANGER'],
+    action: 'IMMEDIATE_DOCTOR_ALERT',
+    reason: payload.flagReason,
+    timestamp: payload.timestamp
+  };
+
+  io.to(dashboardRoom).to(sessionRoom).emit(SOCKET_EVENTS.SERVER.ESCALATION_REQUIRED, escalationPayload);
 }

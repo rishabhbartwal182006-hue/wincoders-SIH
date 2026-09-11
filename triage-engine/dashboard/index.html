@@ -102,6 +102,119 @@
       margin-top: 8px;
       width: 100%;
     }
+    .altitude-banner {
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(99, 102, 241, 0.15));
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .vital-altitude-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .vital-altitude-card.critical {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.08);
+    }
+    .vital-altitude-card.borderline {
+      border-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.08);
+    }
+    .vital-altitude-card.normal {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.05);
+    }
+    .badge-raw {
+      background: #475569;
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .fast-track-pill {
+      background: #dc2626;
+      color: #fff;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      animation: pulse 2s infinite;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .modal-backdrop.hidden {
+      display: none !important;
+    }
+    .alert-modal {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+      color: #f8fafc;
+      position: relative;
+    }
+    .modal-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #fff;
+    }
+    .hpr-input {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #f8fafc;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .hpr-input:focus {
+      border-color: #38bdf8;
+    }
+    .override-dialog {
+      position: relative;
+      width: min(540px, 95%);
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      color: #f8fafc;
+      border-left: 4px solid #38bdf8;
+      display: block !important;
+    }
   </style>
 </head>
 <body>
@@ -113,9 +226,9 @@
         <div><strong>MediKiosk</strong><span>Doctor Command Center</span></div>
       </div>
       <nav>
-        <button class="nav-item active" data-view="queue"><span>▦</span>Live Queue</button>
-        <button class="nav-item" data-view="alerts"><span>⚠</span>Critical Alerts</button>
-        <button class="nav-item" data-view="audit"><span>☷</span>Audit Trail</button>
+        <button class="nav-item active" data-view="queue" id="nav-queue"><span>▦</span>Live Queue</button>
+        <button class="nav-item" data-view="alerts" id="nav-alerts"><span>⚠</span>Critical Alerts <span class="badge emergency hidden" id="nav-alert-badge" style="font-size:10px; padding:2px 7px; border-radius:10px; margin-left:auto; background:#ef4444; color:#fff;">0</span></button>
+        <button class="nav-item" data-view="audit" id="nav-audit"><span>☷</span>Audit Trail</button>
         <a href="/kiosk.html" target="_blank" style="text-decoration:none;"><button class="nav-item"><span>🖥</span>Patient Intake Terminal</button></a>
       </nav>
       <div class="sidebar-foot">
@@ -127,9 +240,9 @@
     <main class="main">
       <header class="topbar">
         <div>
-          <div class="eyebrow">CLINICAL OPERATIONS</div>
-          <h1>Live Patient Queue</h1>
-          <p>Real-time triage queue, clinical discrepancy checking, SOAP EMR view, and Post-OPD care loop.</p>
+          <div class="eyebrow" id="topbar-eyebrow">CLINICAL OPERATIONS</div>
+          <h1 id="topbar-title">Live Patient Queue</h1>
+          <p id="topbar-desc">Real-time triage queue, altitude-aware vitals interpretation, SOAP EMR view, and Post-OPD care loop.</p>
         </div>
         <div class="top-actions">
           <button class="ghost-btn" id="refresh-btn">↻ Refresh</button>
@@ -144,7 +257,8 @@
         <article class="stat-card routine"><span>Routine</span><strong id="stat-routine">0</strong><small>Standard queue</small></article>
       </section>
 
-      <section class="workspace">
+      <!-- Live Queue View -->
+      <section class="workspace" id="workspace-queue">
         <div class="queue-panel panel">
           <div class="panel-head">
             <div><h2>Encounter Queue</h2><span id="queue-meta">0 patients</span></div>
@@ -162,9 +276,51 @@
           <div class="empty-state">
             <div class="empty-icon">◉</div>
             <h3>Select an encounter</h3>
-            <p>Choose a patient from the queue to inspect vitals, discrepancies, Interactive SOAP View, HPR Write-Lock, and Post-OPD Care Loop.</p>
+            <p>Choose a patient from the queue to inspect altitude vitals, discrepancies, Interactive SOAP View, HPR Write-Lock, and Post-OPD Care Loop.</p>
           </div>
         </aside>
+      </section>
+
+      <!-- Critical Alerts View -->
+      <section class="workspace hidden" id="workspace-alerts" style="grid-template-columns: 1fr;">
+        <div class="panel" style="padding:22px;">
+          <div class="panel-head" style="margin-bottom:18px;">
+            <div>
+              <h2 style="display:flex; align-items:center; gap:8px;">
+                <span style="color:#ef4444;">⚠</span> Critical Alerts & Escalations
+              </h2>
+              <span id="alerts-meta" style="font-size:13px; color:#94a3b8;">Active emergency escalations & red flags requiring immediate physician review</span>
+            </div>
+            <button class="ghost-btn" id="btn-refresh-alerts">↻ Refresh Alerts</button>
+          </div>
+          <div id="alerts-list" style="display:flex; flex-direction:column; gap:12px;">
+            <p style="color:#94a3b8; font-size:13px;">Scanning active alerts…</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- System-Wide Cryptographic Audit Trail View -->
+      <section class="workspace hidden" id="workspace-audit" style="grid-template-columns: 1fr;">
+        <div class="panel" style="padding:22px;">
+          <div class="panel-head" style="margin-bottom:18px;">
+            <div>
+              <h2 style="display:flex; align-items:center; gap:8px;">
+                <span style="color:#38bdf8;">☷</span> Immutable Cryptographic Audit Trail
+              </h2>
+              <span id="audit-meta" style="font-size:13px; color:#94a3b8;">Tamper-evident SHA-256 hash chaining (ABDM / SaMD Compliant)</span>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <span id="audit-chain-badge" class="badge verified" style="padding:6px 12px; font-size:11px; background:#065f46; color:#6ee7b7; border-radius:6px; font-weight:700;">🟢 SHA-256 Chain Verified Intact</span>
+              <button class="ghost-btn" id="btn-refresh-audit">↻ Refresh Trail</button>
+            </div>
+          </div>
+          <div style="margin-bottom:16px; display:flex; gap:10px;">
+            <input type="text" id="audit-search" class="hpr-input" placeholder="Search by Session ID, Doctor, or Event Type…" style="max-width:380px; font-size:13px; padding:8px 12px;" />
+          </div>
+          <div id="system-audit-list" style="display:flex; flex-direction:column; gap:10px; max-height:650px; overflow-y:auto;">
+            <p style="color:#94a3b8; font-size:13px;">Loading system audit records…</p>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -178,8 +334,62 @@
         <p id="modal-reason"></p>
         <div class="rule-chips" id="modal-rules"></div>
         <div class="modal-meta" id="modal-meta"></div>
+        <div style="display:flex; gap:10px; margin-top:14px;">
+          <button class="btn-action-primary" id="modal-btn-open" style="margin-top:0; width:auto; padding:8px 16px;">Open Patient Chart</button>
+          <button class="btn-action-secondary" id="modal-btn-dismiss" style="margin-top:0; width:auto; padding:8px 16px;">Dismiss</button>
+        </div>
       </div>
       <button class="modal-close" id="modal-close">×</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="override-modal">
+    <div class="override-dialog">
+      <div class="modal-copy" style="width:100%;">
+        <div class="eyebrow" style="color:#38bdf8;">PHYSICIAN CLINICAL OVERRIDE</div>
+        <h2>Override Altitude Interpretation</h2>
+        <p style="font-size:12px; color:#94a3b8; margin-bottom:14px;">
+          Adjust triage interpretation for chronic altitude acclimatization or specific clinical factors.
+          All overrides are recorded in the ABDM audit trail with your HPR identifier.
+        </p>
+
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div>
+            <label style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:700;">Target Vital</label>
+            <select id="overrideVitalType" class="hpr-input" style="width:100%; box-sizing:border-box; margin-top:4px;">
+              <option value="spo2">Oxygen Saturation (SpO₂)</option>
+              <option value="bp_systolic">Blood Pressure (BP)</option>
+              <option value="heart_rate">Heart Rate (HR)</option>
+              <option value="all">All Altitude Interpreted Vitals</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:700;">Clinical Status Override</label>
+            <select id="overrideStatus" class="hpr-input" style="width:100%; box-sizing:border-box; margin-top:4px;">
+              <option value="normal">Normal (Clinically acceptable for altitude)</option>
+              <option value="borderline">Borderline / Observation</option>
+              <option value="critical">Critical / Fast-Track Escalate</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:700;">Clinical Justification / Reason</label>
+            <textarea id="overrideReason" class="hpr-input" style="width:100%; box-sizing:border-box; margin-top:4px;" rows="2" placeholder="e.g., Native resident with chronic adaptation; stable presentation.">Native resident with chronic adaptation; stable presentation.</textarea>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:#cbd5e1; cursor:pointer;">
+            <input type="checkbox" id="overrideClearFastTrack" checked />
+            Clear active red-flag fast-track status if vital is marked normal
+          </label>
+
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button type="button" class="btn-action-primary" id="btnSubmitOverride">✓ Confirm Override & Log Audit</button>
+            <button type="button" class="btn-action-secondary" id="btnCancelOverride" style="margin-top:0;">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <button class="modal-close" id="override-modal-close">×</button>
     </div>
   </div>
 

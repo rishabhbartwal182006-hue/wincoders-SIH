@@ -5,18 +5,36 @@ const router = express.Router();
 const Session = require('../models/Session');
 const HprAuthToken = require('../models/HprAuthToken');
 const ProvisionalIntake = require('../models/ProvisionalIntake');
+const AuditLog = require('../models/AuditLog');
 const { isMongoConnected, memoryStore } = require('../config/db');
-const { requireBearerToken } = require('../middleware/specAuth');
+const { requireBearerToken, optionalBearerToken } = require('../middleware/specAuth');
 const { analyzeDiscrepancies } = require('../services/discrepancyEngine');
 const { convertToFhirR4Bundle } = require('../services/fhirMapper');
 const specAdapter = require('../services/specAdapter');
 const { detectRedFlags, mergeRedFlags } = require('../services/redFlagRules');
+const { interpretVitals, DISCLAIMER } = require('../services/altitudeAdjustmentService');
 
 // ---- persistence helpers (mirrors the Mongo/in-memory fallback pattern already used elsewhere in this repo) ----
 
 async function findSession(sessionId) {
-  if (isMongoConnected()) return Session.findOne({ session_id: sessionId });
-  return memoryStore.findOne('Session', { session_id: sessionId });
+  if (!sessionId) return null;
+  if (isMongoConnected()) {
+    return Session.findOne({
+      $or: [
+        { session_id: sessionId },
+        { _id: sessionId.match(/^[0-9a-fA-F]{24}$/) ? sessionId : null }
+      ]
+    });
+  }
+  const bySessionId = await memoryStore.findOne('Session', { session_id: sessionId });
+  if (bySessionId) return bySessionId;
+  const col = memoryStore.getCollection('Session');
+  for (const item of col.values()) {
+    if (item.session_id === sessionId || item._id === sessionId) {
+      return item;
+    }
+  }
+  return null;
 }
 
 async function saveSession(sessionDoc) {
@@ -57,6 +75,63 @@ function recomputeClinicalChecks(sessionDoc, io) {
       status: sessionDoc.status,
       redFlags: newRedFlags
     });
+
+    const altRedFlag = newRedFlags.find(f =>
+      (f.flag_type?.includes('hypoxemia') || f.flag_type?.includes('altitude') || f.flag_type === 'hypertensive_crisis') &&
+      f.urgency_tier === 'critical'
+    );
+
+    if (altRedFlag) {
+      const alertPayload = {
+        sessionId: sessionDoc.session_id,
+        patientId: sessionDoc.patient?.abha_id || sessionDoc.patient?.name || sessionDoc.session_id,
+        patientName: sessionDoc.patient?.name || 'Patient',
+        reason: altRedFlag.reason || altRedFlag.flag_type,
+        flagReason: altRedFlag.reason || altRedFlag.flag_type,
+        altitude: {
+          meters: sessionDoc.environment?.altitudeMeters ?? 2438,
+          feet: sessionDoc.environment?.altitudeFeet ?? 8000
+        },
+        altitudeMeters: sessionDoc.environment?.altitudeMeters ?? 2438,
+        vitals: {
+          spo2: sessionDoc.vitals?.find(v => v.type === 'spo2')?.value,
+          systolic: sessionDoc.vitals?.find(v => v.type === 'bp_systolic')?.value,
+          diastolic: sessionDoc.vitals?.find(v => v.type === 'bp_diastolic')?.value,
+          heartRate: sessionDoc.vitals?.find(v => v.type === 'heart_rate')?.value
+        },
+        vitalsSnapshot: {
+          spo2: sessionDoc.vitals?.find(v => v.type === 'spo2')?.value,
+          systolic: sessionDoc.vitals?.find(v => v.type === 'bp_systolic')?.value,
+          diastolic: sessionDoc.vitals?.find(v => v.type === 'bp_diastolic')?.value,
+          heartRate: sessionDoc.vitals?.find(v => v.type === 'heart_rate')?.value
+        },
+        urgencyTier: 'critical',
+        isFastTrack: true,
+        timestamp: new Date().toISOString()
+      };
+
+      AuditLog.recordAuditLog({
+        action: 'ALTITUDE_RED_FLAG_TRIGGERED',
+        sessionId: sessionDoc.session_id,
+        intakeId: sessionDoc.session_id,
+        altitudeMeters: sessionDoc.environment?.altitudeMeters ?? 2438,
+        altitudeSource: sessionDoc.environment?.altitudeSource ?? 'facility_config',
+        algorithmVersion: 'altitude-mvp-v1',
+        userId: 'TRIAGE_ENGINE',
+        details: {
+          flagReason: altRedFlag.reason || altRedFlag.flag_type,
+          flagType: altRedFlag.flag_type,
+          urgencyTier: altRedFlag.urgency_tier,
+          vitalsSnapshot: alertPayload.vitalsSnapshot,
+          timestamp: alertPayload.timestamp
+        }
+      }).catch(err => console.error('Error logging ALTITUDE_RED_FLAG_TRIGGERED:', err));
+
+      io.to('dashboard').emit('ALTITUDE_RED_FLAG', alertPayload);
+      io.emit('ALTITUDE_RED_FLAG', alertPayload);
+      io.to('dashboard').emit('SERVER.ESCALATION_REQUIRED', alertPayload);
+      io.emit('SERVER.ESCALATION_REQUIRED', alertPayload);
+    }
   }
 }
 
@@ -137,31 +212,249 @@ router.put('/sessions/:sessionId/intake', requireBearerToken, async (req, res) =
   return res.status(200).json(asPlain(saved).intake);
 });
 
+// ============================= Environment Context =============================
+
+// POST /sessions/:id/environment (and /sessions/:sessionId/environment)
+router.post(['/sessions/:id/environment', '/sessions/:sessionId/environment'], optionalBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  let session = await findSession(sessionId);
+  if (!session) {
+    const newSessionData = {
+      schema_version: '1.0.0',
+      session_id: sessionId,
+      kiosk_id: req.body?.kiosk_id || 'KIOSK-ALT-01',
+      facility_id: req.body?.facility_id || 'FACILITY-ALT-01',
+      language: req.body?.language || 'en',
+      input_mode: 'touch',
+      status: 'draft'
+    };
+    if (isMongoConnected()) {
+      session = await Session.create(newSessionData);
+    } else {
+      session = await memoryStore.save('Session', new Session(newSessionData).toObject());
+    }
+  }
+
+  const {
+    altitudeMeters = 2438,
+    altitudeSource = 'facility_config',
+    altitudeConfidence = 1.0,
+    timeAtAltitudeHours = null,
+    residenceAltitudeMeters = null,
+    acclimatizationStatus = 'unacclimatized'
+  } = req.body || {};
+
+  const numMeters = Number(altitudeMeters);
+  const altitudeFeet = req.body?.altitudeFeet !== undefined
+    ? Number(req.body.altitudeFeet)
+    : (numMeters === 2438 ? 8000 : Math.round(numMeters * 3.28084));
+
+  const envData = {
+    altitudeMeters: isNaN(numMeters) ? 2438 : numMeters,
+    altitudeFeet,
+    altitudeSource,
+    altitudeConfidence: Number(altitudeConfidence) || 1.0,
+    timeAtAltitudeHours: timeAtAltitudeHours !== null ? Number(timeAtAltitudeHours) : null,
+    residenceAltitudeMeters: residenceAltitudeMeters !== null ? Number(residenceAltitudeMeters) : null,
+    acclimatizationStatus
+  };
+
+  session.environment = envData;
+
+  // Re-calculate altitude context for existing vitals if present
+  if (session.vitals && session.vitals.length > 0) {
+    const symptoms = [
+      session.intake?.chief_complaint?.value,
+      ...(session.intake?.hpi?.associated_symptoms || []).map(s => s.value)
+    ].filter(Boolean);
+
+    const interpreted = interpretVitals(session.vitals, session.environment, symptoms);
+    session.vitals = session.vitals.map(v => {
+      const match = interpreted.find(iv => iv.type === v.type);
+      if (match) {
+        v.altitudeContext = {
+          altitudeMeters: match.altitudeMeters,
+          expectedRange: match.expectedRange,
+          status: match.status,
+          adjustedForAltitude: match.adjustedForAltitude,
+          algorithmVersion: match.algorithmVersion
+        };
+        v.flagged_abnormal = match.status === 'critical' || match.status === 'borderline';
+      }
+      return v;
+    });
+    recomputeClinicalChecks(session, req.app.get('io'));
+  }
+
+  await AuditLog.recordAuditLog({
+    action: 'ALTITUDE_CONTEXT_APPLIED',
+    sessionId: session.session_id,
+    intakeId: session.session_id,
+    altitudeMeters: envData.altitudeMeters,
+    altitudeSource: envData.altitudeSource,
+    algorithmVersion: 'altitude-mvp-v1',
+    userId: req.user?.hpr_id || req.body?.captured_by_staff_id || 'SYSTEM_KIOSK',
+    details: {
+      ...envData,
+      vitalsRecomputed: (session.vitals && session.vitals.length > 0)
+    }
+  }).catch(err => console.error('Error logging ALTITUDE_CONTEXT_APPLIED:', err));
+
+  const saved = await saveSession(session);
+  return res.status(200).json({
+    success: true,
+    sessionId: session.session_id,
+    environment: asPlain(saved).environment,
+    disclaimer: DISCLAIMER
+  });
+});
+
+// GET /sessions/:id/environment (and /sessions/:sessionId/environment)
+router.get(['/sessions/:id/environment', '/sessions/:sessionId/environment'], optionalBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  const session = await findSession(sessionId);
+  if (!session) return notFound(res);
+  return res.status(200).json({
+    success: true,
+    sessionId: session.session_id,
+    environment: asPlain(session).environment || {
+      altitudeMeters: 2438,
+      altitudeFeet: 8000,
+      altitudeSource: 'facility_config',
+      altitudeConfidence: 1.0,
+      acclimatizationStatus: 'unacclimatized'
+    },
+    disclaimer: DISCLAIMER
+  });
+});
+
 // ============================= Vitals =============================
 
-router.get('/sessions/:sessionId/vitals', requireBearerToken, async (req, res) => {
-  const session = await findSession(req.params.sessionId);
+router.get(['/sessions/:id/vitals', '/sessions/:sessionId/vitals'], optionalBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  const session = await findSession(sessionId);
   if (!session) return notFound(res);
   return res.status(200).json(asPlain(session).vitals || []);
 });
 
-router.post('/sessions/:sessionId/vitals', requireBearerToken, async (req, res) => {
-  const session = await findSession(req.params.sessionId);
+// GET /sessions/:id/vitals/interpreted
+router.get(['/sessions/:id/vitals/interpreted', '/sessions/:sessionId/vitals/interpreted'], optionalBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  const session = await findSession(sessionId);
   if (!session) return notFound(res);
 
-  const reading = {
-    ...req.body,
-    source: req.body?.source || 'staff_manual_entry',
-    captured_at: req.body?.captured_at || new Date(),
-    confidence: req.body?.confidence ?? 1.0
-  };
-  session.vitals = [...(session.vitals || []), reading];
+  const env = asPlain(session).environment || { altitudeMeters: 2438, altitudeFeet: 8000 };
+  const symptoms = [
+    session.intake?.chief_complaint?.value,
+    ...(session.intake?.hpi?.associated_symptoms || []).map(s => s.value)
+  ].filter(Boolean);
+
+  const rawVitals = asPlain(session).vitals || [];
+  const interpreted = interpretVitals(rawVitals, env, symptoms);
+
+  return res.status(200).json({
+    success: true,
+    sessionId: session.session_id,
+    altitudeMeters: env.altitudeMeters,
+    environment: env,
+    rawValuesPreserved: true,
+    rawVitals: rawVitals,
+    interpretedVitals: interpreted,
+    disclaimer: DISCLAIMER
+  });
+});
+
+// POST /sessions/:id/vitals (and /sessions/:sessionId/vitals)
+router.post(['/sessions/:id/vitals', '/sessions/:sessionId/vitals'], optionalBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  let session = await findSession(sessionId);
+  if (!session) {
+    const newSessionData = {
+      schema_version: '1.0.0',
+      session_id: sessionId,
+      kiosk_id: 'KIOSK-ALT-01',
+      facility_id: 'FACILITY-ALT-01',
+      language: 'en',
+      input_mode: 'touch',
+      status: 'draft'
+    };
+    if (isMongoConnected()) {
+      session = await Session.create(newSessionData);
+    } else {
+      session = await memoryStore.save('Session', new Session(newSessionData).toObject());
+    }
+  }
+
+  const { vitals, entryMode } = req.body || {};
+  const isMock = entryMode === 'mock';
+  const defaultSource = isMock ? 'device' : 'staff_manual_entry';
+
+  // Gather symptoms for altitude-based escalation logic
+  const symptoms = [
+    session.intake?.chief_complaint?.value,
+    ...(session.intake?.hpi?.associated_symptoms || []).map(s => s.value),
+    ...(req.body?.symptoms || [])
+  ].filter(Boolean);
+
+  const env = session.environment || { altitudeMeters: 2438, altitudeFeet: 8000 };
+
+  let incomingList = [];
+  if (Array.isArray(vitals)) {
+    incomingList = vitals;
+  } else if (vitals && typeof vitals === 'object') {
+    incomingList = [vitals];
+  } else if (req.body?.type && req.body?.value !== undefined) {
+    // Legacy single vital format
+    incomingList = [req.body];
+  }
+
+  // Interpret incoming readings using altitude Adjustment Service
+  const interpreted = interpretVitals(incomingList, env, symptoms);
+
+  const formattedReadings = incomingList.map(item => {
+    const interpMatch = interpreted.find(iv => iv.type === item.type);
+    return {
+      type: item.type,
+      value: Number(item.value),
+      unit: item.unit || (item.type === 'spo2' ? '%' : item.type === 'heart_rate' ? 'bpm' : 'mmHg'),
+      source: item.source || defaultSource,
+      device_id: item.device_id || (isMock ? 'MOCK-SENSOR-01' : null),
+      device_model: item.device_model || (isMock ? 'MediKiosk-Altitude-Mock-v1' : null),
+      captured_by_staff_id: item.captured_by_staff_id || null,
+      captured_at: item.captured_at || new Date(),
+      confidence: item.confidence ?? (isMock ? 0.99 : 1.0),
+      flagged_abnormal: interpMatch ? (interpMatch.status === 'critical' || interpMatch.status === 'borderline') : false,
+      altitudeContext: interpMatch ? {
+        altitudeMeters: interpMatch.altitudeMeters,
+        expectedRange: interpMatch.expectedRange,
+        status: interpMatch.status,
+        adjustedForAltitude: interpMatch.adjustedForAltitude,
+        algorithmVersion: interpMatch.algorithmVersion
+      } : null
+    };
+  });
+
+  session.vitals = [...(session.vitals || []), ...formattedReadings];
   if (session.status === 'draft') session.status = 'in_progress';
   recomputeClinicalChecks(session, req.app.get('io'));
 
   const saved = await saveSession(session);
-  const savedReading = asPlain(saved).vitals.slice(-1)[0];
-  return res.status(201).json(savedReading);
+  const plainSaved = asPlain(saved);
+
+  // If a single vital was submitted via legacy call, return it as single object for backward compatibility
+  if (!vitals && req.body?.type) {
+    return res.status(201).json(plainSaved.vitals.slice(-1)[0]);
+  }
+
+  return res.status(201).json({
+    success: true,
+    sessionId: session.session_id,
+    rawValuesPreserved: true,
+    vitals: plainSaved.vitals,
+    newVitals: formattedReadings,
+    interpretedVitals: interpreted,
+    disclaimer: DISCLAIMER
+  });
 });
 
 // ============================= Documents =============================
@@ -222,14 +515,133 @@ router.get('/sessions/:sessionId/discrepancies', requireBearerToken, async (req,
 
 // ============================= Red flags =============================
 
-router.get('/sessions/:sessionId/red-flags', requireBearerToken, async (req, res) => {
-  const session = await findSession(req.params.sessionId);
+router.get(['/sessions/:id/red-flags', '/sessions/:sessionId/red-flags'], optionalBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  const session = await findSession(sessionId);
   if (!session) return notFound(res);
-  return res.status(200).json(asPlain(session).red_flags || []);
+
+  const plainSession = asPlain(session);
+  const altitudeMeters = plainSession.environment?.altitudeMeters ?? 2438;
+  const flags = (plainSession.red_flags || []).map(f => ({
+    ...f,
+    altitude_context: f.altitude_context || {
+      altitudeMeters,
+      adjustedForAltitude: f.flag_type?.includes('altitude') || f.flag_type?.includes('hypoxemia'),
+      algorithmVersion: 'altitude-mvp-v1'
+    }
+  }));
+
+  if (req.query.format === 'object') {
+    return res.status(200).json({
+      success: true,
+      sessionId: session.session_id,
+      altitudeMeters,
+      redFlags: flags
+    });
+  }
+
+  return res.status(200).json(flags);
 });
 
-router.post('/sessions/:sessionId/red-flags/:flagId/acknowledge', requireBearerToken, async (req, res) => {
-  const session = await findSession(req.params.sessionId);
+// POST /sessions/:id/altitude-override (Physician override of altitude interpretation with Audit Log)
+router.post(['/sessions/:id/altitude-override', '/sessions/:sessionId/altitude-override'], optionalBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  const session = await findSession(sessionId);
+  if (!session) return notFound(res);
+
+  const {
+    doctorHprId = req.staff?.hprId || 'HPR-DOC-OVERRIDE',
+    doctorName = req.staff?.doctorName || 'Attending Physician',
+    vitalType = 'spo2',
+    overrideStatus = 'normal',
+    overrideReason = 'Physician evaluated patient as stable with known chronic adaptation',
+    clearedFastTrack = true
+  } = req.body || {};
+
+  // Update session vitals
+  session.vitals = (session.vitals || []).map(v => {
+    if (vitalType === 'all' || v.type === vitalType) {
+      if (!v.altitudeContext) {
+        v.altitudeContext = {
+          altitudeMeters: session.environment?.altitudeMeters ?? 2438,
+          status: overrideStatus,
+          algorithmVersion: 'altitude-mvp-v1'
+        };
+      }
+      v.altitudeContext.status = overrideStatus;
+      v.altitudeContext.overriddenByDoctor = true;
+      v.altitudeContext.doctorHprId = doctorHprId;
+      v.altitudeContext.doctorName = doctorName;
+      v.altitudeContext.overrideReason = overrideReason;
+      v.altitudeContext.overriddenAt = new Date();
+      if (overrideStatus === 'normal') {
+        v.flagged_abnormal = false;
+      }
+    }
+    return v;
+  });
+
+  // Acknowledge relevant red flags
+  if (session.red_flags && session.red_flags.length > 0) {
+    session.red_flags = session.red_flags.map(f => {
+      if (f.flag_type?.includes('hypoxemia') || f.flag_type?.includes('altitude') || f.flag_type === 'hypertensive_crisis') {
+        f.status = 'physician_acknowledged';
+      }
+      return f;
+    });
+  }
+
+  if (clearedFastTrack && session.status === 'red_flagged') {
+    session.status = 'in_progress';
+  }
+
+  // Create Audit Log record with append-only tamper-evident hash chaining
+  const auditEntry = await AuditLog.recordAuditLog({
+    action: 'ALTITUDE_INTERPRETATION_OVERRIDDEN',
+    sessionId: session.session_id,
+    intakeId: session.session_id,
+    abhaId: session.patient?.abha_id || session.session_id,
+    performedBy: doctorName,
+    userId: doctorHprId || doctorName,
+    hprId: doctorHprId,
+    altitudeMeters: session.environment?.altitudeMeters ?? 2438,
+    altitudeSource: session.environment?.altitudeSource ?? 'facility_config',
+    algorithmVersion: 'altitude-mvp-v1',
+    details: {
+      sessionId: session.session_id,
+      vitalType,
+      overrideStatus,
+      overrideReason,
+      clearedFastTrack,
+      timestamp: new Date().toISOString()
+    }
+  });
+
+  const saved = await saveSession(session);
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('ALTITUDE_OVERRIDE_RECORDED', {
+      sessionId: session.session_id,
+      auditEntry,
+      session: asPlain(saved)
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    sessionId: session.session_id,
+    status: saved.status,
+    vitals: asPlain(saved).vitals,
+    redFlags: asPlain(saved).red_flags,
+    auditLog: auditEntry,
+    message: 'Altitude interpretation successfully overridden and logged.'
+  });
+});
+
+router.post(['/sessions/:id/red-flags/:flagId/acknowledge', '/sessions/:sessionId/red-flags/:flagId/acknowledge'], requireBearerToken, async (req, res) => {
+  const sessionId = req.params.id || req.params.sessionId;
+  const session = await findSession(sessionId);
   if (!session) return notFound(res);
 
   const { status } = req.body || {};

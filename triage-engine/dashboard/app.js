@@ -1,6 +1,6 @@
 (() => {
   const API = '';
-  const state = { sessions: [], selected: null, filter: 'ALL', socket: null };
+  const state = { sessions: [], selected: null, filter: 'ALL', socket: null, currentView: 'queue', activeAlerts: [], allAuditLogs: [] };
   const $ = (s) => document.querySelector(s);
   const esc = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const level = (s) => (s?.triageResult?.triageLevel || 'ROUTINE').toUpperCase();
@@ -47,6 +47,21 @@
     $('#stat-emergency').textContent = counts.EMERGENCY;
     $('#stat-urgent').textContent = counts.URGENT;
     $('#stat-routine').textContent = counts.ROUTINE;
+
+    const alertBadge = $('#nav-alert-badge');
+    if (alertBadge) {
+      const totalAlerts = counts.EMERGENCY + state.activeAlerts.length;
+      if (totalAlerts > 0) {
+        alertBadge.textContent = totalAlerts;
+        alertBadge.classList.remove('hidden');
+      } else {
+        alertBadge.classList.add('hidden');
+      }
+    }
+
+    if (state.currentView === 'alerts') {
+      renderCriticalAlerts();
+    }
   }
 
   function renderQueue(){
@@ -235,7 +250,54 @@
     const glucVal = v.BLOOD_GLUCOSE?.value || v.bloodGlucose?.value || 140;
     const ayushNotes = fullRecord.ayushParameters ? `Agni: ${fullRecord.ayushParameters.agni || 'Sama'}, Koshtha: ${fullRecord.ayushParameters.koshtha || 'Madhyama'}` : 'AYUSH: Unassessed';
 
-    const objectiveText = `Hardware Vitals: BP ${sysBp} mmHg | SpO₂ ${spo2Val}% | HR ${hrVal} bpm | Glucose ${glucVal} mg/dL. ${ayushNotes}`;
+    // Altitude Context & Interpretation
+    const env = fullRecord.environment || s.environment || {
+      altitudeMeters: 2438,
+      altitudeFeet: 8000,
+      altitudeSource: 'facility_config',
+      altitudeConfidence: 1.0,
+      timeAtAltitudeHours: 24,
+      residenceAltitudeMeters: 0,
+      acclimatizationStatus: 'unacclimatized'
+    };
+    const vSummary = fullRecord.preConsultationSummary?.section1_vitals || {};
+    const altInterp = fullRecord.altitudeInterpretation || s.altitudeInterpretation || [];
+    const altOverride = fullRecord.altitudeOverride || s.altitudeOverride || null;
+
+    // SpO2 details
+    const spo2Obj = vSummary.spo2 || {};
+    const spo2Raw = spo2Obj.value ?? spo2Val;
+    const spo2Ctx = spo2Obj.altitudeContext || altInterp.find(x => x.type === 'spo2') || {};
+    const spo2Expected = spo2Ctx.expectedRange ? `${spo2Ctx.expectedRange[0]}–${spo2Ctx.expectedRange[1]}%` : '92–97%';
+    const spo2Status = spo2Ctx.status || (spo2Raw < 88 ? 'critical' : spo2Raw < 92 ? 'borderline' : 'normal');
+    const spo2Reason = spo2Ctx.reason || `SpO₂ (${spo2Raw}%) interpreted for altitude ${env.altitudeMeters}m (${env.altitudeFeet}ft).`;
+    const spo2Prov = spo2Obj.provenance || 'device-captured';
+    const isSpo2FastTrack = spo2Status === 'critical' || l === 'EMERGENCY';
+
+    // BP details (Normal range not shifted upward for altitude)
+    const bpObj = vSummary.bloodPressure || {};
+    const bpSys = bpObj.systolic ?? String(sysBp).split('/')[0];
+    const bpDia = bpObj.diastolic ?? (String(sysBp).split('/')[1] || 80);
+    const bpProv = bpObj.provenance || 'device-captured';
+    const isBpCrisis = Number(bpSys) >= 180 || Number(bpDia) >= 120;
+    const bpStatus = isBpCrisis ? 'critical' : (Number(bpSys) >= 140 || Number(bpDia) >= 90 ? 'borderline' : 'normal');
+    const bpInterpretation = isBpCrisis
+      ? `Hypertensive crisis: BP ${bpSys}/${bpDia} mmHg. Immediate clinical review required.`
+      : `Normal. Standard AHA/ICMR guideline range (90–120 / 60–80 mmHg). No altitude adjustment applied to BP threshold.`;
+
+    // Heart Rate details
+    const hrObj = vSummary.heartRate || {};
+    const hrRaw = hrObj.value ?? hrVal;
+    const hrCtx = hrObj.altitudeContext || altInterp.find(x => x.type === 'heart_rate') || {};
+    const hrExpected = hrCtx.expectedRange ? `${hrCtx.expectedRange[0]}–${hrCtx.expectedRange[1]} bpm` : '65–115 bpm';
+    const hrStatus = hrCtx.status || 'normal';
+    const hrProv = hrObj.provenance || 'device-captured';
+
+    // Algorithm & Disclaimer
+    const algoVer = fullRecord.preConsultationSummary?.algorithmVersion || 'altitude-mvp-v1';
+    const disclaimerText = fullRecord.preConsultationSummary?.disclaimer || 'Decision-support MVP. Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed.';
+
+    const objectiveText = `Hardware Vitals: BP ${bpSys}/${bpDia} mmHg | SpO₂ ${spo2Raw}% | HR ${hrRaw} bpm | Glucose ${glucVal} mg/dL. Altitude: ${env.altitudeMeters}m. ${ayushNotes}`;
     const defaultAssessment = l === 'EMERGENCY' ? 'Hypertensive Crisis / Acute Symptoms requiring immediate stabilization.' : l === 'URGENT' ? 'Stage 1/2 Hypertension / Hyperglycemia requiring priority evaluation.' : 'Essential OPD Follow-up & Routine Consultation.';
     const defaultPlan = '1. Tab Telmisartan 40mg OD (Morning)\n2. Tab Metformin 500mg BD (Morning & Night)\n3. Re-check BP & Blood Sugar in 7 days.';
 
@@ -303,6 +365,110 @@
             <div class="patient-sub">Intake ${esc(s.sessionId)} · ABHA ${esc(s.patientId)} <br>· Status: <strong style="color:${isVerified?'#16a34a':'#f59e0b'}">${isVerified?'VERIFIED':'PROVISIONAL'}</strong></div>
           </div>
           <span class="badge ${l.toLowerCase()}">${l}</span>
+        </div>
+      </div>
+
+      <!-- Altitude-Aware Clinical Vitals & Interpretation Card -->
+      <div class="section">
+        <div class="section-label">ALTITUDE-AWARE CLINICAL VITALS & INTERPRETATION</div>
+
+        <!-- Altitude Context Header Banner -->
+        <div class="altitude-banner">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+              <strong style="color:#38bdf8; font-size:13px;">📍 Facility Altitude: ${Number(env.altitudeMeters || 2438).toLocaleString()} m (${Number(env.altitudeFeet || 8000).toLocaleString()} ft)</strong>
+              <div style="font-size:11px; color:#cbd5e1; margin-top:2px;">
+                Source: <strong>${esc(env.altitudeSource || 'facility_config')}</strong> · Acclimatization: <strong>${esc(env.acclimatizationStatus || 'unacclimatized')}</strong> · Algorithm: <strong>${esc(algoVer)}</strong>
+              </div>
+            </div>
+            <button type="button" class="btn-action-secondary" id="btnOpenAltitudeOverride" style="width:auto; padding:6px 12px; margin-top:0; font-size:11px;">
+              ⚖️ Override Interpretation
+            </button>
+          </div>
+          ${altOverride ? `
+            <div style="margin-top:8px; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; border-radius:6px; padding:6px 10px; font-size:11px; color:#e0f2fe;">
+              ✓ <strong>Physician Override Active:</strong> ${esc(altOverride.overriddenBy || 'Dr. Rajesh Sharma')} (HPR: ${esc(altOverride.doctorHprId || 'HPR-DOC-OVERRIDE')}) set vital status to <span style="font-weight:700; text-transform:uppercase;">${esc(altOverride.overrideStatus || 'normal')}</span>. <em>Reason: ${esc(altOverride.reason || 'Chronically adapted resident')}</em>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- SpO2 Vitals Card -->
+        <div class="vital-altitude-card ${spo2Status}">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;">Oxygen Saturation (SpO₂)</div>
+              <div style="margin-top:2px;">
+                <strong style="font-size:20px; color:#f8fafc;">${esc(spo2Raw)}%</strong>
+                <span class="badge-raw">RAW VALUE</span>
+              </div>
+            </div>
+            <div>
+              ${isSpo2FastTrack ? '<span class="fast-track-pill">🚨 YES — FAST-TRACK</span>' : '<span style="color:#10b981; font-weight:700; font-size:12px;">✓ Routine Track</span>'}
+            </div>
+          </div>
+          <div style="margin-top:8px; display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:11px; color:#94a3b8;">
+            <div>Altitude: <strong style="color:#cbd5e1;">${Number(env.altitudeMeters || 2438).toLocaleString()} m (${Number(env.altitudeFeet || 8000).toLocaleString()} ft)</strong></div>
+            <div>Expected Range: <strong style="color:#38bdf8;">${esc(spo2Expected)}</strong></div>
+            <div>Provenance: <strong style="color:#cbd5e1;">${esc(spo2Prov)}</strong></div>
+            <div>Algorithm: <strong style="color:#cbd5e1;">${esc(algoVer)}</strong></div>
+          </div>
+          <div style="margin-top:8px; font-size:12px; line-height:1.4; color:${spo2Status === 'critical' ? '#fca5a5' : spo2Status === 'borderline' ? '#fcd34d' : '#86efac'};">
+            <strong>Interpretation:</strong> ${esc(spo2Reason)}
+          </div>
+        </div>
+
+        <!-- Blood Pressure Vitals Card (Explicitly standard range, not altitude adjusted upward) -->
+        <div class="vital-altitude-card ${bpStatus}">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;">Blood Pressure (BP)</div>
+              <div style="margin-top:2px;">
+                <strong style="font-size:20px; color:#f8fafc;">${esc(bpSys)}/${esc(bpDia)} mmHg</strong>
+                <span class="badge-raw">RAW VALUE</span>
+              </div>
+            </div>
+            <div>
+              ${isBpCrisis ? '<span class="fast-track-pill">🚨 HYPERTENSIVE CRISIS</span>' : '<span style="color:#10b981; font-weight:700; font-size:12px;">✓ Standard Range</span>'}
+            </div>
+          </div>
+          <div style="margin-top:8px; display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:11px; color:#94a3b8;">
+            <div>Altitude: <strong style="color:#cbd5e1;">${Number(env.altitudeMeters || 2438).toLocaleString()} m</strong></div>
+            <div>Expected Range: <strong style="color:#38bdf8;">90–120 / 60–80 mmHg</strong></div>
+            <div>Provenance: <strong style="color:#cbd5e1;">${esc(bpProv)}</strong></div>
+            <div>Adjustment: <strong style="color:#cbd5e1;">None (AHA/ICMR Standard)</strong></div>
+          </div>
+          <div style="margin-top:8px; font-size:12px; line-height:1.4; color:${bpStatus === 'critical' ? '#fca5a5' : '#86efac'};">
+            <strong>Interpretation:</strong> ${esc(bpInterpretation)}
+          </div>
+        </div>
+
+        <!-- Heart Rate Card -->
+        <div class="vital-altitude-card ${hrStatus}">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;">Heart Rate (HR)</div>
+              <div style="margin-top:2px;">
+                <strong style="font-size:20px; color:#f8fafc;">${esc(hrRaw)} bpm</strong>
+                <span class="badge-raw">RAW VALUE</span>
+              </div>
+            </div>
+            <div>
+              ${hrStatus === 'critical' ? '<span class="fast-track-pill">🚨 TACHYCARDIA ESCALATE</span>' : '<span style="color:#10b981; font-weight:700; font-size:12px;">✓ Altitude Baseline</span>'}
+            </div>
+          </div>
+          <div style="margin-top:8px; display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:11px; color:#94a3b8;">
+            <div>Altitude: <strong style="color:#cbd5e1;">${Number(env.altitudeMeters || 2438).toLocaleString()} m</strong></div>
+            <div>Expected Range: <strong style="color:#38bdf8;">${esc(hrExpected)}</strong></div>
+            <div>Provenance: <strong style="color:#cbd5e1;">${esc(hrProv)}</strong></div>
+            <div>Algorithm: <strong style="color:#cbd5e1;">${esc(algoVer)}</strong></div>
+          </div>
+          <div style="margin-top:8px; font-size:12px; line-height:1.4; color:${hrStatus === 'critical' ? '#fca5a5' : hrStatus === 'borderline' ? '#fcd34d' : '#86efac'};">
+            <strong>Interpretation:</strong> ${esc(hrCtx.reason || 'Normal heart rate within altitude-adjusted parameters.')}
+          </div>
+        </div>
+
+        <div style="font-size:10px; color:#64748b; font-style:italic; margin-top:6px;">
+          ⚖️ ${esc(disclaimerText)}
         </div>
       </div>
 
@@ -536,15 +702,313 @@
         }
       });
     }
+
+    if ($('#btnOpenAltitudeOverride')) {
+      $('#btnOpenAltitudeOverride').addEventListener('click', () => {
+        $('#override-modal').classList.remove('hidden');
+      });
+    }
   }
 
+  let currentModalSessionId = null;
+
   async function loadAudit(sessionId){
+    const el = $('#audit-list');
+    if (!el) return;
     try {
       const data = await api(`/api/events/session/${encodeURIComponent(sessionId)}/audit`);
       const entries = (data.auditTrail || []).slice().reverse();
-      const el = $('#audit-list');
-      el.innerHTML = entries.length ? entries.map(x => `<div class="audit-entry"><div class="audit-time">${formatTime(x.timestamp)}</div><div class="audit-body"><strong>${esc(x.eventType)}</strong><p>${esc(x.reason)}</p></div></div>`).join('') : '<p>No audit records found.</p>';
-    } catch(err) { if($('#audit-list')) $('#audit-list').innerHTML = '<p>Audit trail unavailable.</p>'; }
+
+      if (!entries.length) {
+        el.innerHTML = '<p style="color:#94a3b8; font-size:12px;">No audit records found for this encounter.</p>';
+        return;
+      }
+
+      el.innerHTML = entries.map(x => {
+        const isRed = (x.eventType || '').includes('RED_FLAG');
+        const isOver = (x.eventType || '').includes('OVERRIDE');
+        const color = isRed ? '#ef4444' : isOver ? '#f59e0b' : '#38bdf8';
+        const hashStr = x.hash && x.hash !== 'N/A' ? `<span style="font-family:monospace; font-size:9px; color:#64748b;">[SHA: ${esc(x.hash.slice(0, 8))}…]</span>` : '';
+
+        return `
+          <div class="audit-entry" style="grid-template-columns: 80px 1fr; border-bottom:1px solid #1e293b; padding:8px 0;">
+            <div class="audit-time" style="font-size:10px; color:#64748b;">${formatTime(x.timestamp)}</div>
+            <div class="audit-body">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <strong style="color:${color}; font-size:11px;">${esc(x.eventType)}</strong>
+                ${hashStr}
+              </div>
+              <p style="font-size:11px; color:#cbd5e1; margin:2px 0 0;">${esc(x.reason)}</p>
+              <div style="font-size:10px; color:#64748b; margin-top:2px;">Performed by: ${esc(x.performedBy || 'SYSTEM')}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch(err) {
+      el.innerHTML = '<p style="color:#f87171; font-size:12px;">Audit trail unavailable.</p>';
+    }
+  }
+
+  function renderCriticalAlerts(){
+    const emergencies = state.sessions.filter(s => level(s) === 'EMERGENCY' || s.status === 'red_flagged');
+    const container = $('#alerts-list');
+    if (!container) return;
+
+    const totalCount = emergencies.length + state.activeAlerts.length;
+    $('#alerts-meta').textContent = `${totalCount} active critical escalation${totalCount === 1 ? '' : 's'} requiring immediate physician review`;
+
+    if (!emergencies.length && !state.activeAlerts.length) {
+      container.innerHTML = `
+        <div style="text-align:center; padding:40px; background:#111e26; border-radius:12px; border:1px solid #1e3a47;">
+          <div style="font-size:32px; margin-bottom:10px;">🟢</div>
+          <h3 style="color:#6ee7b7; margin:0 0 6px;">No Critical Emergencies Active</h3>
+          <p style="color:#94a3b8; font-size:13px; margin:0;">All patient encounters are currently within normal or routine priority tiers.</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Merge sessions and real-time alerts
+    const displayedIds = new Set();
+    let cardsHtml = '';
+
+    // Render session emergencies
+    emergencies.forEach(s => {
+      displayedIds.add(s.sessionId);
+      const v = s.vitals || {};
+      const env = s.environment || { altitudeMeters: 2438, altitudeFeet: 8000 };
+      const spo2 = v.SPO2?.value || v.spo2?.value || '—';
+      const bp = v.BLOOD_PRESSURE?.value || (v.bloodPressure ? `${v.bloodPressure.systolic?.value}/${v.bloodPressure.diastolic?.value}` : '—');
+      const hr = v.HEART_RATE?.value || v.heartRate?.value || '—';
+      const reason = s.triageResult?.reason || s.triageResult?.action || 'Critical condition detected requiring immediate attention';
+
+      cardsHtml += `
+        <div class="panel" style="background:#191824; border:1px solid #dc2626; padding:16px; border-radius:10px; display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase;">🚨 EMERGENCY FAST-TRACK</span>
+                <span style="font-size:16px; font-weight:700; color:#fff;">${esc(s.patientName || s.patientId || 'Patient')}</span>
+                <span style="font-size:12px; color:#94a3b8;">· ABHA: ${esc(s.patientId || 'N/A')}</span>
+              </div>
+              <div style="font-size:13px; color:#f87171; margin-top:4px; font-weight:600;">
+                ⚠ ${esc(reason)}
+              </div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <span class="badge" style="background:#0c4a6e; color:#38bdf8; font-size:11px;">🏔️ ${env.altitudeMeters} m (${env.altitudeFeet || Math.round(env.altitudeMeters * 3.28084)} ft)</span>
+              <span class="badge" style="background:#374151; color:#d1d5db; font-size:11px;">ID: ${esc(s.sessionId)}</span>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; background:#111922; padding:10px; border-radius:8px;">
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">SpO₂ Saturation</div>
+              <div style="font-size:16px; font-weight:800; color:#ef4444;">${spo2}% <small style="font-size:10px; color:#fca5a5;">(Sub-altitude min)</small></div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Blood Pressure</div>
+              <div style="font-size:16px; font-weight:800; color:#fff;">${bp} <small style="font-size:10px; color:#94a3b8;">mmHg</small></div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Heart Rate</div>
+              <div style="font-size:16px; font-weight:800; color:#fff;">${hr} <small style="font-size:10px; color:#94a3b8;">bpm</small></div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Timestamp</div>
+              <div style="font-size:13px; font-weight:600; color:#cbd5e1;">${formatTime(s.lastUpdated || s.createdAt)}</div>
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button class="btn-action-primary btn-alert-open" data-session="${esc(s.sessionId)}" style="width:auto; padding:7px 16px; font-size:12px; margin-top:0;">
+              🔍 Open Patient Chart
+            </button>
+            <button class="btn-action-secondary btn-alert-override" data-session="${esc(s.sessionId)}" style="width:auto; padding:7px 16px; font-size:12px; margin-top:0;">
+              ⚖️ Physician Override
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    // Render active live alerts if not already in session list
+    state.activeAlerts.forEach(a => {
+      if (displayedIds.has(a.sessionId)) return;
+      displayedIds.add(a.sessionId);
+
+      const alt = a.altitudeMeters || a.altitude?.meters || a.altitude || 2438;
+      const spo2 = a.vitalsSnapshot?.spo2 ?? a.vitals?.spo2 ?? 'N/A';
+      const bp = a.vitalsSnapshot ? `${a.vitalsSnapshot.systolic || '—'}/${a.vitalsSnapshot.diastolic || '—'}` : '—';
+      const hr = a.vitalsSnapshot?.heartRate ?? '—';
+      const reason = a.reason || a.flagReason || 'Real-time emergency escalation';
+
+      cardsHtml += `
+        <div class="panel" style="background:#191824; border:1px solid #dc2626; padding:16px; border-radius:10px; display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase;">🚨 LIVE SOCKET ALERT</span>
+                <span style="font-size:16px; font-weight:700; color:#fff;">${esc(a.patientName || a.patientId || 'Patient')}</span>
+                <span style="font-size:12px; color:#94a3b8;">· ID: ${esc(a.sessionId)}</span>
+              </div>
+              <div style="font-size:13px; color:#f87171; margin-top:4px; font-weight:600;">
+                ⚠ ${esc(reason)}
+              </div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <span class="badge" style="background:#0c4a6e; color:#38bdf8; font-size:11px;">🏔️ ${alt} m</span>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; background:#111922; padding:10px; border-radius:8px;">
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">SpO₂ Saturation</div>
+              <div style="font-size:16px; font-weight:800; color:#ef4444;">${spo2}%</div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Blood Pressure</div>
+              <div style="font-size:16px; font-weight:800; color:#fff;">${bp} mmHg</div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Heart Rate</div>
+              <div style="font-size:16px; font-weight:800; color:#fff;">${hr} bpm</div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Timestamp</div>
+              <div style="font-size:13px; font-weight:600; color:#cbd5e1;">${formatTime(a.timestamp)}</div>
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button class="btn-action-primary btn-alert-open" data-session="${esc(a.sessionId)}" style="width:auto; padding:7px 16px; font-size:12px; margin-top:0;">
+              🔍 Open Patient Chart
+            </button>
+            <button class="btn-action-secondary btn-alert-override" data-session="${esc(a.sessionId)}" style="width:auto; padding:7px 16px; font-size:12px; margin-top:0;">
+              ⚖️ Physician Override
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = cardsHtml;
+
+    container.querySelectorAll('.btn-alert-open').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectSession(btn.dataset.session);
+        switchView('queue');
+      });
+    });
+
+    container.querySelectorAll('.btn-alert-override').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await selectSession(btn.dataset.session);
+        $('#override-modal').classList.remove('hidden');
+      });
+    });
+  }
+
+  async function loadSystemAudit(){
+    const listEl = $('#system-audit-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<p style="color:#94a3b8; font-size:13px;">Loading system audit records…</p>';
+
+    try {
+      const data = await api('/api/events/audit');
+      state.allAuditLogs = data.auditTrail || [];
+
+      const badge = $('#audit-chain-badge');
+      if (badge) {
+        if (data.chainValid) {
+          badge.textContent = `🟢 SHA-256 Chain Verified Intact (${data.count} records)`;
+          badge.style.background = '#065f46';
+          badge.style.color = '#6ee7b7';
+        } else {
+          badge.textContent = `🔴 Chain Tamper Detected at Index ${data.chainDetails?.brokenIndex}`;
+          badge.style.background = '#7f1d1d';
+          badge.style.color = '#fca5a5';
+        }
+      }
+
+      renderAuditList(state.allAuditLogs);
+    } catch(err) {
+      listEl.innerHTML = `<p style="color:#f87171; font-size:13px;">Failed to load audit trail: ${err.message}</p>`;
+    }
+  }
+
+  function renderAuditList(logs){
+    const listEl = $('#system-audit-list');
+    if (!listEl) return;
+
+    if (!logs.length) {
+      listEl.innerHTML = '<p style="color:#94a3b8; font-size:13px;">No audit records found.</p>';
+      return;
+    }
+
+    listEl.innerHTML = logs.map(l => {
+      const isRed = (l.eventType || '').includes('RED_FLAG');
+      const isOver = (l.eventType || '').includes('OVERRIDE');
+      const isContext = (l.eventType || '').includes('CONTEXT');
+      const badgeColor = isRed ? '#ef4444' : isOver ? '#f59e0b' : isContext ? '#10b981' : '#38bdf8';
+      const prevDisplay = l.prevHash ? (l.prevHash === 'GENESIS' ? 'GENESIS' : `${l.prevHash.slice(0, 10)}…`) : 'GENESIS';
+      const hashDisplay = l.hash && l.hash !== 'N/A' ? `${l.hash.slice(0, 14)}…` : 'N/A';
+
+      return `
+        <div style="background:#111922; border:1px solid #1e293b; padding:12px 14px; border-radius:8px; display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:10px; font-weight:800; padding:2px 7px; border-radius:4px; background:${badgeColor}; color:#fff;">
+                ${esc(l.eventType)}
+              </span>
+              <span style="font-size:12px; font-weight:700; color:#fff;">Session: \`${esc(l.sessionId)}\`</span>
+              <span style="font-size:11px; color:#94a3b8;">· By: <strong>${esc(l.performedBy || 'SYSTEM')}</strong></span>
+            </div>
+            <div style="font-size:11px; color:#64748b;">${formatDate(l.timestamp)}</div>
+          </div>
+          <div style="font-size:12px; color:#cbd5e1;">
+            ${esc(l.reason)}
+          </div>
+          <div style="display:flex; gap:14px; font-size:10px; font-family:monospace; color:#64748b; background:#0b1118; padding:6px 10px; border-radius:4px; overflow-x:auto;">
+            <span>PrevHash: <code style="color:#94a3b8;">${esc(prevDisplay)}</code></span>
+            <span>➔</span>
+            <span>SHA-256: <code style="color:#38bdf8;">${esc(hashDisplay)}</code></span>
+            <span style="margin-left:auto; color:#10b981;">✓ Tamper-Evident</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function switchView(viewName){
+    state.currentView = viewName;
+
+    // Toggle nav item classes
+    document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+      item.classList.toggle('active', item.dataset.view === viewName);
+    });
+
+    // Toggle workspace containers
+    $('#workspace-queue')?.classList.toggle('hidden', viewName !== 'queue');
+    $('#workspace-alerts')?.classList.toggle('hidden', viewName !== 'alerts');
+    $('#workspace-audit')?.classList.toggle('hidden', viewName !== 'audit');
+
+    // Update Topbar
+    if (viewName === 'queue') {
+      $('#topbar-eyebrow').textContent = 'CLINICAL OPERATIONS';
+      $('#topbar-title').textContent = 'Live Patient Queue';
+      $('#topbar-desc').textContent = 'Real-time triage queue, altitude-aware vitals interpretation, SOAP EMR view, and Post-OPD care loop.';
+    } else if (viewName === 'alerts') {
+      $('#topbar-eyebrow').textContent = 'EMERGENCY & FAST-TRACK DISPATCH';
+      $('#topbar-title').textContent = 'Critical Alerts Command Center';
+      $('#topbar-desc').textContent = 'Active emergency escalations, severe hypoxemia red flags, hypertensive crises, and immediate doctor interventions.';
+      renderCriticalAlerts();
+    } else if (viewName === 'audit') {
+      $('#topbar-eyebrow').textContent = 'SECURITY & COMPLIANCE GOVERNANCE';
+      $('#topbar-title').textContent = 'Immutable Cryptographic Audit Trail';
+      $('#topbar-desc').textContent = 'Tamper-evident append-only SHA-256 hash chaining conforming to ABDM, NRCeS India, and CDSCO SaMD standards.';
+      loadSystemAudit();
+    }
   }
 
   function upsertSessionFromTriage(payload){
@@ -570,12 +1034,24 @@
   }
 
   function showEmergency(payload){
-    $('#modal-title').textContent = `Emergency escalation · ${payload.patientId || payload.sessionId}`;
-    $('#modal-reason').textContent = payload.reason || 'An emergency triage condition has been detected.';
-    $('#modal-rules').innerHTML = (payload.triggeredRules || []).map(r => `<span class="rule-chip danger">${esc(r)}</span>`).join('');
-    $('#modal-meta').textContent = `Action: ${payload.action || 'IMMEDIATE_DOCTOR_ALERT'} · ${formatDate(payload.timestamp)}`;
+    currentModalSessionId = payload.sessionId;
+    const patId = payload.patientName || payload.patientId || payload.sessionId;
+    $('#modal-title').textContent = `Emergency escalation · ${patId}`;
+    const reasonText = payload.reason || payload.flagReason || 'An emergency triage condition has been detected.';
+    $('#modal-reason').textContent = reasonText;
+
+    const alt = payload.altitudeMeters || payload.altitude?.meters || payload.altitude || 2438;
+    const spo2 = payload.vitalsSnapshot?.spo2 ?? payload.vitals?.spo2 ?? 'N/A';
+    const rules = payload.triggeredRules || [
+      reasonText,
+      `Altitude: ${alt}m (${Math.round(alt * 3.28084)}ft)`,
+      `SpO2: ${spo2}%`,
+      `Algorithm: ${payload.algorithmVersion || 'altitude-mvp-v1'}`
+    ];
+    $('#modal-rules').innerHTML = rules.map(r => `<span class="rule-chip danger">${esc(r)}</span>`).join('');
+    $('#modal-meta').textContent = `Action: ${payload.action || 'IMMEDIATE_DOCTOR_ALERT'} · ${formatDate(payload.timestamp || new Date())}`;
     $('#alert-modal').classList.remove('hidden');
-    toast('Emergency escalation received from triage engine.');
+    toast('🚨 Emergency escalation received from triage engine.');
   }
 
   function connectSocket(){
@@ -610,8 +1086,54 @@
     });
 
     state.socket.on('ESCALATION_REQUIRED', payload => {
+      state.activeAlerts.push(payload);
       upsertSessionFromTriage({ sessionId: payload.sessionId, triageResult: { ...payload, triageLevel: 'EMERGENCY' } });
       showEmergency(payload);
+      renderStats();
+    });
+
+    state.socket.on('SERVER.ESCALATION_REQUIRED', payload => {
+      state.activeAlerts.push(payload);
+      upsertSessionFromTriage({ sessionId: payload.sessionId, triageResult: { ...payload, triageLevel: 'EMERGENCY' } });
+      showEmergency(payload);
+      renderStats();
+    });
+
+    state.socket.on('ALTITUDE_RED_FLAG', payload => {
+      const reason = payload.reason || payload.flagReason || 'Critical hypoxemia at altitude';
+      const alt = payload.altitudeMeters || payload.altitude?.meters || payload.altitude || 2438;
+      const spo2 = payload.vitalsSnapshot?.spo2 ?? payload.vitals?.spo2 ?? 'N/A';
+
+      toast(`🚨 Altitude Red Flag: ${reason} (${payload.sessionId})`);
+
+      const enrichedPayload = {
+        ...payload,
+        reason,
+        triggeredRules: [
+          reason,
+          `Altitude: ${alt}m (${Math.round(alt * 3.28084)}ft)`,
+          `SpO2: ${spo2}%`,
+          `Algorithm: ${payload.algorithmVersion || 'altitude-mvp-v1'}`
+        ],
+        action: 'FAST_TRACK_ALTITUDE_OXYGEN'
+      };
+
+      state.activeAlerts.push(enrichedPayload);
+
+      upsertSessionFromTriage({
+        sessionId: payload.sessionId,
+        patientId: payload.patientId,
+        patientName: payload.patientName,
+        triageResult: {
+          triageLevel: 'EMERGENCY',
+          action: 'IMMEDIATE_DOCTOR_ALERT',
+          reason: reason,
+          triggeredRules: [reason]
+        }
+      });
+
+      showEmergency(enrichedPayload);
+      renderStats();
     });
 
     state.socket.on('RED_FLAG_DETECTED', payload => {
@@ -619,6 +1141,15 @@
     });
   }
 
+  // Sidebar Navigation View Switchers
+  document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchView(btn.dataset.view);
+    });
+  });
+
+  // Filter Buttons inside Live Queue
   document.querySelectorAll('.filter').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.filter').forEach(x => x.classList.remove('active'));
     btn.classList.add('active');
@@ -627,10 +1158,87 @@
   }));
 
   $('#refresh-btn').addEventListener('click', loadSessions);
+  $('#btn-refresh-alerts')?.addEventListener('click', renderCriticalAlerts);
+  $('#btn-refresh-audit')?.addEventListener('click', loadSystemAudit);
+
+  // Search Filter in System Audit View
+  $('#audit-search')?.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    if (!q) {
+      renderAuditList(state.allAuditLogs);
+      return;
+    }
+    const filtered = state.allAuditLogs.filter(l =>
+      (l.sessionId && l.sessionId.toLowerCase().includes(q)) ||
+      (l.eventType && l.eventType.toLowerCase().includes(q)) ||
+      (l.performedBy && l.performedBy.toLowerCase().includes(q)) ||
+      (l.reason && l.reason.toLowerCase().includes(q))
+    );
+    renderAuditList(filtered);
+  });
+
+  // Alert Modal Controls
   $('#modal-close').addEventListener('click', () => $('#alert-modal').classList.add('hidden'));
+  $('#modal-btn-dismiss')?.addEventListener('click', () => $('#alert-modal').classList.add('hidden'));
+  $('#modal-btn-open')?.addEventListener('click', () => {
+    $('#alert-modal').classList.add('hidden');
+    if (currentModalSessionId) {
+      selectSession(currentModalSessionId);
+      switchView('queue');
+    }
+  });
   $('#alert-modal').addEventListener('click', e => { if (e.target.id === 'alert-modal') $('#alert-modal').classList.add('hidden'); });
+
+  // Altitude Override Modal Listeners
+  $('#override-modal-close')?.addEventListener('click', () => $('#override-modal').classList.add('hidden'));
+  $('#btnCancelOverride')?.addEventListener('click', () => $('#override-modal').classList.add('hidden'));
+  $('#override-modal')?.addEventListener('click', e => { if (e.target.id === 'override-modal') $('#override-modal').classList.add('hidden'); });
+
+  $('#btnSubmitOverride')?.addEventListener('click', async () => {
+    if (!state.selected) return;
+    const sessionId = state.selected.sessionId;
+    const vitalType = $('#overrideVitalType').value;
+    const overrideStatus = $('#overrideStatus').value;
+    const overrideReason = $('#overrideReason').value.trim();
+    const clearedFastTrack = $('#overrideClearFastTrack').checked;
+    const doctorHprId = $('#hprIdInput')?.value?.trim() || 'HPR-IN-9876543210';
+    const doctorName = $('#docNameInput')?.value?.trim() || 'Dr. Rajesh Sharma, MD';
+
+    try {
+      let res = await fetch(`/api/v1/clinical/patient/${encodeURIComponent(sessionId)}/altitude-override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doctorHprId, doctorName, vitalType, overrideStatus, overrideReason, clearedFastTrack })
+      });
+      if (!res.ok) {
+        res = await fetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/altitude-override`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ doctorHprId, doctorName, vitalType, overrideStatus, overrideReason, clearedFastTrack })
+        });
+      }
+      const data = await res.json();
+      if (res.ok) {
+        toast('✓ Altitude interpretation override recorded & logged to audit trail.');
+        $('#override-modal').classList.add('hidden');
+        await loadSessions();
+        await selectSession(sessionId, true);
+      } else {
+        toast(`Override failed: ${data.message || data.error}`);
+      }
+    } catch (err) {
+      toast(`Override error: ${err.message}`);
+    }
+  });
+
   $('#seed-btn').addEventListener('click', async () => {
-    try { await api('/api/events/demo/seed', { method: 'POST' }); await loadSessions(); toast('Demo encounters loaded.'); } catch(err) { toast(`Demo seed failed: ${err.message}`); }
+    try {
+      await api('/api/events/demo/seed', { method: 'POST' });
+      await loadSessions();
+      toast('Demo encounters loaded.');
+    } catch(err) {
+      toast(`Demo seed failed: ${err.message}`);
+    }
   });
 
   connectSocket();

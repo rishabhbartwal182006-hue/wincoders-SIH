@@ -18,10 +18,40 @@ const ProvenanceMetaSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const EnvironmentSchema = new mongoose.Schema({
+  altitudeMeters: { type: Number, default: 2438 },
+  altitudeFeet: { type: Number, default: 8000 },
+  altitudeSource: {
+    type: String,
+    enum: ['facility_config', 'staff_manual'],
+    default: 'facility_config'
+  },
+  altitudeConfidence: { type: Number, min: 0, max: 1, default: 1.0 },
+  timeAtAltitudeHours: { type: Number, default: null },
+  residenceAltitudeMeters: { type: Number, default: null },
+  acclimatizationStatus: {
+    type: String,
+    enum: ['unacclimatized', 'partial', 'acclimatized', 'native'],
+    default: 'unacclimatized'
+  }
+}, { _id: false });
+
+const AltitudeContextSchema = new mongoose.Schema({
+  altitudeMeters: { type: Number },
+  expectedRange: [{ type: Number }],
+  status: {
+    type: String,
+    enum: ['normal', 'borderline', 'critical', 'below-expected', 'above-expected']
+  },
+  adjustedForAltitude: { type: Boolean, default: false },
+  algorithmVersion: { type: String, default: 'altitude-mvp-v1' }
+}, { _id: false });
+
 const VitalValueSchema = new mongoose.Schema({
   value: { type: mongoose.Schema.Types.Mixed, required: true },
   unit: { type: String, required: true },
-  provenanceMeta: ProvenanceMetaSchema
+  provenanceMeta: ProvenanceMetaSchema,
+  altitudeContext: { type: AltitudeContextSchema, default: null }
 }, { _id: false });
 
 const ChiefComplaintSchema = new mongoose.Schema({
@@ -107,7 +137,18 @@ const ProvisionalIntakeSchema = new mongoose.Schema({
     dob: { type: String },
     phone: { type: String },
     address: { type: String },
+    heightCm: { type: Number, default: null },
     provenanceMeta: ProvenanceMetaSchema
+  },
+  environment: {
+    type: EnvironmentSchema,
+    default: () => ({
+      altitudeMeters: 2438,
+      altitudeFeet: 8000,
+      altitudeSource: 'facility_config',
+      altitudeConfidence: 1.0,
+      acclimatizationStatus: 'unacclimatized'
+    })
   },
   vitals: {
     bloodPressure: {
@@ -165,6 +206,14 @@ const ProvisionalIntakeSchema = new mongoose.Schema({
     index: true
   },
   hprSignatureBlock: HprSignatureBlockSchema,
+  altitudeOverride: {
+    overriddenBy: { type: String },
+    doctorHprId: { type: String },
+    originalStatus: { type: String },
+    overrideStatus: { type: String },
+    reason: { type: String },
+    timestamp: { type: Date, default: Date.now }
+  },
   fhirBundle: { type: Object }
 }, {
   timestamps: true

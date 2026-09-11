@@ -2,49 +2,82 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const ProvisionalIntake = require('../models/ProvisionalIntake');
+const Session = require('../models/Session');
 const AuditLog = require('../models/AuditLog');
 const hprAuthMiddleware = require('../middleware/hprAuth');
 const { convertToFhirR4Bundle, generateFHIRBundle } = require('../services/fhirMapper');
 const { syncToAbdmNetwork } = require('../services/abdmSyncService');
 const { isMongoConnected, memoryStore } = require('../config/db');
+const { interpretVitals, ALGORITHM_VERSION, DISCLAIMER } = require('../services/altitudeAdjustmentService');
+const specAdapter = require('../services/specAdapter');
 
 /**
  * Format patient record into Doctor Dashboard Summary & Session structures
  */
 function buildDashboardSummary(record) {
+  const environment = record.environment || {
+    altitudeMeters: 2438,
+    altitudeFeet: 8000,
+    altitudeSource: "facility_config",
+    altitudeConfidence: 1.0,
+    timeAtAltitudeHours: 24,
+    residenceAltitudeMeters: 0,
+    acclimatizationStatus: "unacclimatized"
+  };
+
+  const interpretedList = interpretVitals(record.vitals, environment, record.chiefComplaints);
+  const spo2Interp = interpretedList.find(i => i.type === 'spo2') || null;
+  const sysInterp = interpretedList.find(i => i.type === 'bp_systolic') || null;
+  const diaInterp = interpretedList.find(i => i.type === 'bp_diastolic') || null;
+  const hrInterp = interpretedList.find(i => i.type === 'heart_rate') || null;
+  const tempInterp = interpretedList.find(i => i.type === 'temperature') || null;
+  const glucInterp = interpretedList.find(i => i.type === 'blood_glucose') || null;
+
   const preConsultationSummary = {
     order: ["Vitals", "Chief Complaint", "HPI", "History", "AYUSH parameters"],
+    environment,
+    altitudeInterpretation: interpretedList,
+    algorithmVersion: ALGORITHM_VERSION,
+    disclaimer: DISCLAIMER,
     section1_vitals: {
       bloodPressure: record.vitals?.bloodPressure ? {
         systolic: record.vitals.bloodPressure.systolic?.value,
         diastolic: record.vitals.bloodPressure.diastolic?.value,
         unit: "mmHg",
         provenance: record.vitals.bloodPressure.systolic?.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.bloodPressure.systolic?.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.bloodPressure.systolic?.provenanceMeta?.confidence || 1.0,
+        altitudeContext: {
+          systolic: record.vitals.bloodPressure.systolic?.altitudeContext || sysInterp,
+          diastolic: record.vitals.bloodPressure.diastolic?.altitudeContext || diaInterp
+        }
       } : null,
       spo2: record.vitals?.spo2 ? {
         value: record.vitals.spo2.value,
         unit: record.vitals.spo2.unit || "%",
         provenance: record.vitals.spo2.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.spo2.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.spo2.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.spo2?.altitudeContext || spo2Interp
       } : null,
       heartRate: record.vitals?.heartRate ? {
         value: record.vitals.heartRate.value,
         unit: record.vitals.heartRate.unit || "bpm",
         provenance: record.vitals.heartRate.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.heartRate.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.heartRate.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.heartRate?.altitudeContext || hrInterp
       } : null,
       temperature: record.vitals?.temperature ? {
         value: record.vitals.temperature.value,
         unit: record.vitals.temperature.unit || "°F",
         provenance: record.vitals.temperature.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.temperature.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.temperature.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.temperature?.altitudeContext || tempInterp
       } : null,
       bloodGlucose: record.vitals?.bloodGlucose ? {
         value: record.vitals.bloodGlucose.value,
         unit: record.vitals.bloodGlucose.unit || "mg/dL",
         provenance: record.vitals.bloodGlucose.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.bloodGlucose.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.bloodGlucose.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.bloodGlucose?.altitudeContext || glucInterp
       } : null
     },
     section2_chiefComplaints: (record.chiefComplaints || []).map(cc => ({
@@ -130,7 +163,10 @@ function buildDashboardSummary(record) {
         symptomName: c.symptom,
         severity: c.severity === 'Severe' ? 8 : c.severity === 'Moderate' ? 5 : 3
       }))
-    }
+    },
+    environment,
+    altitudeInterpretation: interpretedList,
+    altitudeOverride: record.altitudeOverride || null
   };
 
   return {
@@ -139,6 +175,9 @@ function buildDashboardSummary(record) {
     patientDemographics: record.patientDemographics,
     status: record.status,
     triage: record.triage,
+    environment,
+    altitudeInterpretation: interpretedList,
+    altitudeOverride: record.altitudeOverride || null,
     hprSignatureBlock: record.hprSignatureBlock || null,
     preConsultationSummary,
     documentTimeline,
@@ -207,6 +246,89 @@ router.get('/patient/:id/summary', async (req, res) => {
 });
 
 /**
+ * POST /api/v1/clinical/patient/:id/altitude-override
+ * Physician override of altitude interpretation with Audit Log
+ */
+router.post(['/patient/:id/altitude-override', '/session/:id/altitude-override'], async (req, res) => {
+  try {
+    const id = req.params.id;
+    let record = null;
+    if (isMongoConnected()) {
+      record = await ProvisionalIntake.findOne({ $or: [{ intakeId: id }, { abhaId: id }] });
+    } else {
+      record = await memoryStore.findOne('ProvisionalIntake', { intakeId: id }) ||
+               await memoryStore.findOne('ProvisionalIntake', { abhaId: id });
+    }
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Record not found' });
+    }
+
+    const {
+      doctorHprId = 'HPR-DOC-OVERRIDE',
+      doctorName = 'Attending Physician',
+      vitalType = 'spo2',
+      overrideStatus = 'normal',
+      overrideReason = 'Physician evaluated patient as stable with known chronic adaptation',
+      clearedFastTrack = true
+    } = req.body || {};
+
+    record.altitudeOverride = {
+      overriddenBy: doctorName,
+      doctorHprId: doctorHprId,
+      originalStatus: 'critical',
+      overrideStatus: overrideStatus,
+      reason: overrideReason,
+      timestamp: new Date()
+    };
+
+    if (clearedFastTrack && record.triage) {
+      if (record.triage.triageLevel === 'EMERGENCY') {
+        record.triage.triageLevel = 'PRIORITY';
+      }
+    }
+
+    if (isMongoConnected()) {
+      await record.save();
+    } else {
+      await memoryStore.save('ProvisionalIntake', record);
+    }
+
+    const auditData = {
+      logId: `AUDIT-OVERRIDE-${Date.now()}`,
+      action: 'ALTITUDE_INTERPRETATION_OVERRIDE',
+      intakeId: record.intakeId,
+      abhaId: record.abhaId,
+      performedBy: doctorName,
+      hprId: doctorHprId,
+      details: {
+        vitalType,
+        overrideStatus,
+        overrideReason,
+        clearedFastTrack,
+        timestamp: new Date().toISOString()
+      },
+      ipAddress: req.ip || '127.0.0.1',
+      timestamp: new Date()
+    };
+
+    if (isMongoConnected()) {
+      await AuditLog.create(auditData);
+    } else {
+      await memoryStore.save('AuditLog', auditData);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Altitude interpretation overridden successfully',
+      altitudeOverride: record.altitudeOverride
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/events/session/:sessionId
  */
 router.get('/session/:sessionId', async (req, res) => {
@@ -220,6 +342,33 @@ router.get('/session/:sessionId', async (req, res) => {
     } else {
       record = await memoryStore.findOne('ProvisionalIntake', { intakeId: sessionId }) ||
                await memoryStore.findOne('ProvisionalIntake', { abhaId: sessionId });
+    }
+
+    if (!record) {
+      let sessionDoc = null;
+      if (isMongoConnected()) {
+        sessionDoc = await Session.findOne({
+          $or: [
+            { session_id: sessionId },
+            { _id: sessionId.match(/^[0-9a-fA-F]{24}$/) ? sessionId : null }
+          ]
+        });
+      } else {
+        sessionDoc = await memoryStore.findOne('Session', { session_id: sessionId });
+        if (!sessionDoc) {
+          const col = memoryStore.getCollection('Session');
+          for (const item of col.values()) {
+            if (item.session_id === sessionId || item._id === sessionId) {
+              sessionDoc = item;
+              break;
+            }
+          }
+        }
+      }
+
+      if (sessionDoc) {
+        record = specAdapter.sessionToInternalIntake(sessionDoc);
+      }
     }
 
     if (!record) {
@@ -253,7 +402,35 @@ router.get('/sessions', async (req, res) => {
       records = await memoryStore.find('ProvisionalIntake');
     }
 
-    const sessions = records.map(r => buildDashboardSummary(r).session);
+    let sessionsDocs = [];
+    if (isMongoConnected()) {
+      sessionsDocs = await Session.find().sort({ updatedAt: -1, createdAt: -1 });
+    } else {
+      const col = memoryStore.getCollection('Session');
+      sessionsDocs = Array.from(col.values());
+    }
+
+    const sessionMap = new Map();
+    // Add converted Sessions
+    for (const s of sessionsDocs) {
+      const adapted = specAdapter.sessionToInternalIntake(s);
+      const summary = buildDashboardSummary(adapted);
+      sessionMap.set(s.session_id, summary.session);
+    }
+    // Add ProvisionalIntakes
+    for (const r of records) {
+      const summary = buildDashboardSummary(r);
+      if (!sessionMap.has(r.intakeId)) {
+        sessionMap.set(r.intakeId, summary.session);
+      }
+    }
+
+    const sessions = Array.from(sessionMap.values()).sort((a, b) => {
+      const rank = { EMERGENCY: 0, URGENT: 1, ROUTINE: 2 };
+      const rankA = rank[(a.triageResult?.triageLevel || 'ROUTINE').toUpperCase()] ?? 2;
+      const rankB = rank[(b.triageResult?.triageLevel || 'ROUTINE').toUpperCase()] ?? 2;
+      return rankA - rankB || new Date(b.lastUpdated || 0) - new Date(a.lastUpdated || 0);
+    });
 
     return res.status(200).json({
       success: true,
@@ -273,23 +450,82 @@ router.get('/session/:sessionId/audit', async (req, res) => {
     const { sessionId } = req.params;
     let logs = [];
     if (isMongoConnected()) {
-      logs = await AuditLog.find({ intakeId: sessionId }).sort({ timestamp: -1 });
+      logs = await AuditLog.find({
+        $or: [{ intakeId: sessionId }, { sessionId: sessionId }]
+      }).sort({ timestamp: -1, createdAt: -1 });
     } else {
-      logs = await memoryStore.find('AuditLog', { intakeId: sessionId });
+      const col = memoryStore.getCollection('AuditLog');
+      logs = Array.from(col.values()).filter(l => l.intakeId === sessionId || l.sessionId === sessionId);
+      logs.sort((a, b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt));
     }
 
-    const auditTrail = logs.map(l => ({
-      timestamp: l.timestamp,
-      eventType: l.action,
-      currentLevel: 'PROVISIONAL',
-      reason: l.details?.reason || l.action
-    }));
+    const auditTrail = logs.map(l => {
+      const details = l.details || l.payload || {};
+      const reason = details.overrideReason || details.flagReason || details.reason || details.action || (details.altitudeMeters ? `Altitude context applied: ${details.altitudeMeters}m (${details.acclimatizationStatus || 'unacclimatized'})` : l.action);
+      return {
+        id: l.logId || l._id,
+        timestamp: l.timestamp || l.createdAt,
+        eventType: l.action,
+        currentLevel: details.urgencyTier?.toUpperCase() || (l.action.includes('RED_FLAG') ? 'EMERGENCY' : 'PROVISIONAL'),
+        performedBy: l.performedBy || l.userId || 'SYSTEM_KIOSK',
+        reason: reason,
+        hash: l.hash || 'N/A',
+        prevHash: l.prevHash || 'GENESIS',
+        details: details
+      };
+    });
 
     return res.status(200).json({
       success: true,
       sessionId: sessionId,
       count: auditTrail.length,
       auditTrail: auditTrail
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/events/audit (and GET /api/v1/clinical/audit)
+ * System-wide tamper-evident cryptographic audit log feed for the Doctor Dashboard
+ */
+router.get(['/audit', '/api/events/audit'], async (req, res) => {
+  try {
+    let logs = [];
+    if (isMongoConnected()) {
+      logs = await AuditLog.find().sort({ timestamp: -1, createdAt: -1 });
+    } else {
+      const col = memoryStore.getCollection('AuditLog');
+      logs = Array.from(col.values());
+      logs.sort((a, b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt));
+    }
+
+    const chronoLogs = [...logs].reverse();
+    const chainValidation = AuditLog.verifyAuditChain ? AuditLog.verifyAuditChain(chronoLogs) : { valid: true };
+
+    const formattedLogs = logs.map(l => {
+      const details = l.details || l.payload || {};
+      const reason = details.overrideReason || details.flagReason || details.reason || details.action || (details.altitudeMeters ? `Altitude context applied: ${details.altitudeMeters}m (${details.acclimatizationStatus || 'unacclimatized'})` : l.action);
+      return {
+        id: l.logId || l._id,
+        timestamp: l.timestamp || l.createdAt,
+        eventType: l.action,
+        sessionId: l.sessionId || l.intakeId || 'SYSTEM',
+        performedBy: l.performedBy || l.userId || 'SYSTEM_KIOSK',
+        reason: reason,
+        hash: l.hash || 'N/A',
+        prevHash: l.prevHash || 'GENESIS',
+        details: details
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: formattedLogs.length,
+      chainValid: chainValidation.valid,
+      chainDetails: chainValidation,
+      auditTrail: formattedLogs
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

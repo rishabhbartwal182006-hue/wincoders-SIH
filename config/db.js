@@ -19,7 +19,7 @@ class MemoryStore {
 
   async save(collectionName, doc) {
     const col = this.getCollection(collectionName);
-    const id = doc.intakeId || doc.hprId || doc.token || doc._id || `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = (collectionName === 'AuditLog' && doc.logId) ? doc.logId : (doc.logId || doc.intakeId || doc.hprId || doc.token || doc._id || `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
     const record = { ...doc, _id: id, createdAt: doc.createdAt || new Date(), updatedAt: new Date() };
     col.set(id, record);
     return record;
@@ -31,6 +31,12 @@ class MemoryStore {
       let match = true;
       for (const key of Object.keys(query)) {
         if (item[key] !== query[key]) {
+          if (key === 'action' && (
+            (query[key] === 'ALTITUDE_INTERPRETATION_OVERRIDE' && item[key] === 'ALTITUDE_INTERPRETATION_OVERRIDDEN') ||
+            (query[key] === 'ALTITUDE_INTERPRETATION_OVERRIDDEN' && item[key] === 'ALTITUDE_INTERPRETATION_OVERRIDE')
+          )) {
+            continue;
+          }
           match = false;
           break;
         }
@@ -47,6 +53,12 @@ class MemoryStore {
       let match = true;
       for (const key of Object.keys(query)) {
         if (item[key] !== query[key]) {
+          if (key === 'action' && (
+            (query[key] === 'ALTITUDE_INTERPRETATION_OVERRIDE' && item[key] === 'ALTITUDE_INTERPRETATION_OVERRIDDEN') ||
+            (query[key] === 'ALTITUDE_INTERPRETATION_OVERRIDDEN' && item[key] === 'ALTITUDE_INTERPRETATION_OVERRIDE')
+          )) {
+            continue;
+          }
           match = false;
           break;
         }

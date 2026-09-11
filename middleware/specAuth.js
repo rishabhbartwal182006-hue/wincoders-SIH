@@ -46,4 +46,22 @@ async function requireBearerToken(req, res, next) {
   }
 }
 
-module.exports = { requireBearerToken };
+async function optionalBearerToken(req, res, next) {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+    if (token) {
+      const tokenDoc = isMongoConnected()
+        ? await HprAuthToken.findOne({ token, status: 'ACTIVE' })
+        : await memoryStore.findOne('HprAuthToken', { token, status: 'ACTIVE' });
+      if (tokenDoc && (!tokenDoc.expiresAt || new Date(tokenDoc.expiresAt) >= new Date())) {
+        req.staff = tokenDoc;
+      }
+    }
+    return next();
+  } catch (err) {
+    return next();
+  }
+}
+
+module.exports = { requireBearerToken, optionalBearerToken };

@@ -54,6 +54,35 @@ const IntakeSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const EnvironmentSchema = new mongoose.Schema({
+  altitudeMeters: { type: Number, default: 2438 },
+  altitudeFeet: { type: Number, default: 8000 },
+  altitudeSource: {
+    type: String,
+    enum: ['facility_config', 'staff_manual'],
+    default: 'facility_config'
+  },
+  altitudeConfidence: { type: Number, min: 0, max: 1, default: 1.0 },
+  timeAtAltitudeHours: { type: Number, default: null },
+  residenceAltitudeMeters: { type: Number, default: null },
+  acclimatizationStatus: {
+    type: String,
+    enum: ['unacclimatized', 'partial', 'acclimatized', 'native'],
+    default: 'unacclimatized'
+  }
+}, { _id: false });
+
+const AltitudeContextSchema = new mongoose.Schema({
+  altitudeMeters: { type: Number },
+  expectedRange: [{ type: Number }],
+  status: {
+    type: String,
+    enum: ['normal', 'borderline', 'critical', 'below-expected', 'above-expected']
+  },
+  adjustedForAltitude: { type: Boolean, default: false },
+  algorithmVersion: { type: String, default: 'altitude-mvp-v1' }
+}, { _id: false });
+
 const VitalReadingSchema = new mongoose.Schema({
   type: {
     type: String,
@@ -72,7 +101,8 @@ const VitalReadingSchema = new mongoose.Schema({
   captured_by_staff_id: { type: String, default: null },
   captured_at: { type: Date, required: true, default: Date.now },
   confidence: { type: Number, min: 0, max: 1, default: 1.0 },
-  flagged_abnormal: { type: Boolean, default: false }
+  flagged_abnormal: { type: Boolean, default: false },
+  altitudeContext: { type: AltitudeContextSchema, default: null }
 });
 
 const DocumentRecordSchema = new mongoose.Schema({
@@ -128,7 +158,9 @@ const RedFlagSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'acknowledged', 'resolved'],
     default: 'active'
-  }
+  },
+  reason: { type: String, default: null },
+  altitude_context: { type: mongoose.Schema.Types.Mixed, default: null }
 }, { _id: false });
 
 const SessionSchema = new mongoose.Schema({
@@ -159,8 +191,19 @@ const SessionSchema = new mongoose.Schema({
     age: { type: Number, default: null },
     gender: { type: String, default: null },
     phone: { type: String, default: null },
+    heightCm: { type: Number, default: null },
     opd_department: { type: String },
     visit_type: { type: String, enum: ['first_visit', 'follow_up'] }
+  },
+  environment: {
+    type: EnvironmentSchema,
+    default: () => ({
+      altitudeMeters: 2438,
+      altitudeFeet: 8000,
+      altitudeSource: 'facility_config',
+      altitudeConfidence: 1.0,
+      acclimatizationStatus: 'unacclimatized'
+    })
   },
   consent: {
     consent_artifacts: [{
@@ -181,6 +224,14 @@ const SessionSchema = new mongoose.Schema({
   documents: [DocumentRecordSchema],
   cross_check_discrepancies: [DiscrepancySchema],
   red_flags: [RedFlagSchema],
+  altitude_override: {
+    overridden_by: { type: String },
+    doctor_hpr_id: { type: String },
+    original_status: { type: String },
+    override_status: { type: String },
+    reason: { type: String },
+    timestamp: { type: Date, default: Date.now }
+  },
   staff_verification: {
     verified: { type: Boolean, default: false },
     staff_hpr_id: { type: String, default: null },

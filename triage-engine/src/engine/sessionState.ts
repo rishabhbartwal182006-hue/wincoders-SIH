@@ -33,6 +33,15 @@ export interface SessionState {
   symptoms: AccumulatedSymptoms;
   questionnaire: Record<string, QuestionnairePayload>;
   events: PatientEvent[];
+  environment?: {
+    altitudeMeters?: number;
+    altitudeFeet?: number;
+    altitudeSource?: string;
+    altitudeConfidence?: number;
+    timeAtAltitudeHours?: number;
+    residenceAltitudeMeters?: number;
+    acclimatizationStatus?: string;
+  };
 
   previousTriageResult?: TriageResult;
   latestTriageResult?: TriageResult;

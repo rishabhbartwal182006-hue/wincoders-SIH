@@ -28,7 +28,8 @@ export const SOCKET_EVENTS = {
     NEXT_QUESTION: 'NEXT_QUESTION',
     QUESTIONNAIRE_INTERRUPTED: 'QUESTIONNAIRE_INTERRUPTED',
     ERROR_OCCURRED: 'ERROR_OCCURRED',
-    SESSION_SYNC: 'SESSION_SYNC'
+    SESSION_SYNC: 'SESSION_SYNC',
+    ALTITUDE_RED_FLAG: 'ALTITUDE_RED_FLAG'
   }
 } as const;
 
@@ -97,5 +98,22 @@ export interface RedFlagDetectedPayload {
   currentLevel: TriageLevel;
   triggeredRules: string[];
   reason: string;
+  timestamp: string;
+}
+
+export interface AltitudeEscalationPayload {
+  sessionId: string;
+  patientId?: string;
+  flagReason: string;
+  altitude: number;
+  altitudeMeters: number;
+  vitalsSnapshot: {
+    spo2?: number;
+    systolic?: number;
+    diastolic?: number;
+    heartRate?: number;
+  };
+  urgencyTier: 'critical' | 'urgent';
+  isFastTrack: boolean;
   timestamp: string;
 }

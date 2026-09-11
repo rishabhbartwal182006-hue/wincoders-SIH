@@ -1,0 +1,75 @@
+========================================================================================
+MEDIKIOSK ALTITUDE-AWARE CLINICAL INTAKE: JUDGE PITCH & LIVE DEMO SCRIPT
+Smart India Hackathon (SIH) / Clinical Innovation Demo
+========================================================================================
+
+THE CORE PITCH LINE:
+“We don’t need altitude hardware. We need altitude context. The kiosk already captures symptoms and vitals. Our MVP adds a configurable altitude profile and rule engine that interprets readings in context, while preserving raw data and keeping the clinician in control.”
+
+========================================================================================
+1. THE PROBLEM (30 SECONDS)
+========================================================================================
+- In high-altitude clinics—from Leh and Ladakh (3,500m) to Shimla, Ooty, and military border posts—standard medical devices are calibrated for sea level.
+- Normal SpO2 at 8,000 ft drops from 98% down to 92-95% due to reduced barometric atmospheric pressure.
+- Without elevation context:
+  * Either healthy acclimatizing tourists trigger false panics and overwhelm doctors,
+  * OR critically deteriorating patients suffering high-altitude pulmonary edema (HAPE) or acute mountain sickness (AMS) are missed because basic numbers look "ambiguous".
+- Clinics don't have budget to buy specialized $10,000 altitude sensors for every kiosk.
+
+========================================================================================
+2. OUR SOLUTION (45 SECONDS)
+========================================================================================
+- MediKiosk introduces Altitude Contextual Clinical Decision Support (CDS):
+  1. Configurable Altitude Profiles: Automatically loaded from facility elevation config (e.g. 2,438 m) or manual staff entry.
+  2. Contextual Clinical Interpretation: Dynamic SpO2 expected ranges without ever distorting normal blood pressure thresholds (120/80 mmHg remains strictly normal).
+  3. Strict Raw Value Preservation: Raw patient sensor readings are permanently stored in ABDM/FHIR R4 Observation resources.
+  4. Explainable Multi-Symptom Rule Engine: Combines elevation + vitals + danger symptoms (chest tightness, dyspnea, confusion) to escalate critical red flags.
+  5. Physician Command & Override: The doctor retains full clinical authority. Overrides require mandatory HPR (Healthcare Professional Registry) biometric write-lock and generate an append-only, tamper-evident SHA-256 cryptographically chained audit log.
+
+========================================================================================
+3. LIVE DEMO SCENARIOS (60 SECONDS)
+========================================================================================
+
+[SCENARIO A: Sea Level Severe Hypoxemia]
+Command:
+  node demo/load_scenario.js --scenario=a
+What Judges See:
+  - Altitude: 0 meters (Sea Level)
+  - Vitals: SpO2 = 88%, BP = 120/80 mmHg
+  - Symptoms: None (routine health checkup)
+  - Clinical Verdict: RED FLAG (Severe hypoxemia at sea level).
+  - Rationale: At sea level, expected SpO2 is 95-100%. 88% is >5% below expected minimum. Immediate doctor alert.
+
+[SCENARIO B: High Altitude (8,000 ft / 2,438 m) with Danger Symptom]
+Command:
+  node demo/load_scenario.js --scenario=b
+What Judges See:
+  - Altitude: 2,438 m (8,000 ft)
+  - Vitals: SpO2 = 88%, BP = 120/80 mmHg
+  - Symptoms: "Chest tightness" & fatigue
+  - Clinical Verdict:
+    * Blood Pressure: 120/80 mmHg is interpreted as NORMAL. We NEVER shift BP thresholds upward for elevation.
+    * SpO2: 88% is mildly below the 92-97% altitude band, but because "chest tightness" is present, Rule 1 escalates to CRITICAL RED FLAG ("Hypoxemia at altitude with danger symptoms").
+    * Doctor Fast-Track: Instant Tele-triage notification pushed to Doctor Command Center via WebSockets.
+
+[SCENARIO C: Doctor Override with Cryptographic Audit Trail]
+Show Doctor Command Center (public/index.html):
+  - Doctor reviews SpO2 88% card with altitude badge: "High Elevation (2,438 m)".
+  - Doctor clicks "Override Interpretation", enters reason: "Known chronic baseline; patient walking comfortably without acute distress."
+  - System enforces HPR biometric token verification.
+  - Generates tamper-evident SHA-256 chained audit record (verified append-only).
+
+========================================================================================
+4. STANDARDS & INTEROPERABILITY (30 SECONDS)
+========================================================================================
+- FHIR R4 & ABDM Compliant:
+  * Extension: https://medikiosk.example/fhir/StructureDefinition/altitude-context
+  * Algorithm Version: https://medikiosk.example/fhir/StructureDefinition/algorithm-version (altitude-mvp-v1)
+  * Raw values preserved in valueQuantity (88%).
+  * Clinical notes provide explainable altitude context to downstream Ayushman Bharat EMRs.
+
+========================================================================================
+5. CLINICAL GOVERNANCE & SAFETY DISCLAIMER
+========================================================================================
+"Decision-support MVP. Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed."
+========================================================================================

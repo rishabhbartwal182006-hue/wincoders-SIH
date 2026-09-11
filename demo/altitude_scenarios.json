@@ -1,0 +1,158 @@
+{
+  "_disclaimer": "Decision-support MVP. Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed.",
+  "description": "MediKiosk Altitude-Aware Intake Scenarios for Judge Demonstrations & Clinical Simulation",
+  "scenarios": {
+    "scenario_a": {
+      "id": "scenario_a_sea_level_hypoxemia",
+      "title": "Scenario A: Sea Level Severe Hypoxemia",
+      "description": "Patient at sea level (0 m) with SpO2 88% and no danger symptoms. At sea level, expected SpO2 is 95-100%. 88% is >5% below expected minimum (95-5=90%), triggering immediate critical red flag escalation.",
+      "environment": {
+        "altitudeMeters": 0,
+        "altitudeFeet": 0,
+        "altitudeSource": "facility_config",
+        "altitudeConfidence": 1.0,
+        "acclimatizationStatus": "native"
+      },
+      "patient": {
+        "name": "Rohan Sharma",
+        "age": 34,
+        "gender": "male",
+        "abha_id": "91-4455-8899-0001"
+      },
+      "intake": {
+        "chief_complaint": {
+          "value": "Routine general health checkup"
+        },
+        "hpi": {
+          "associated_symptoms": []
+        }
+      },
+      "vitals": [
+        {
+          "type": "spo2",
+          "value": 88,
+          "unit": "%",
+          "source": "device"
+        },
+        {
+          "type": "bp_systolic",
+          "value": 120,
+          "unit": "mmHg",
+          "source": "device"
+        },
+        {
+          "type": "bp_diastolic",
+          "value": 80,
+          "unit": "mmHg",
+          "source": "device"
+        },
+        {
+          "type": "heart_rate",
+          "value": 74,
+          "unit": "bpm",
+          "source": "device"
+        }
+      ],
+      "expectedInterpretation": {
+        "spo2": {
+          "altitudeMeters": 0,
+          "expectedRange": [95, 100],
+          "status": "critical",
+          "flaggedAbnormal": true,
+          "rawValue": 88
+        },
+        "bloodPressure": {
+          "status": "normal",
+          "systolic": 120,
+          "diastolic": 80,
+          "adjustedForAltitude": false
+        },
+        "triage": {
+          "status": "red_flagged",
+          "primaryRedFlag": "Severe hypoxemia at altitude",
+          "urgencyTier": "critical",
+          "isFastTrack": true
+        }
+      }
+    },
+    "scenario_b": {
+      "id": "scenario_b_high_altitude_chest_tightness",
+      "title": "Scenario B: High Altitude (8,000 ft) Hypoxemia with Danger Symptoms",
+      "description": "Patient in Leh / high elevation clinic (2,438 m / 8,000 ft) with SpO2 88%, BP 120/80 mmHg, and chest tightness. Expected SpO2 at 2,438m is 92-97%. 88% is mildly sub-expected, but the presence of chest tightness elevates this to an immediate critical Red Flag. BP 120/80 is confirmed normal with no upward threshold distortion.",
+      "environment": {
+        "altitudeMeters": 2438,
+        "altitudeFeet": 8000,
+        "altitudeSource": "facility_config",
+        "altitudeConfidence": 1.0,
+        "timeAtAltitudeHours": 18,
+        "residenceAltitudeMeters": 210,
+        "acclimatizationStatus": "unacclimatized"
+      },
+      "patient": {
+        "name": "Priya Verma",
+        "age": 28,
+        "gender": "female",
+        "abha_id": "91-3322-1144-8802"
+      },
+      "intake": {
+        "chief_complaint": {
+          "value": "Mild chest tightness and altitude fatigue after arriving yesterday"
+        },
+        "hpi": {
+          "associated_symptoms": [
+            { "value": "chest tightness" }
+          ]
+        }
+      },
+      "vitals": [
+        {
+          "type": "spo2",
+          "value": 88,
+          "unit": "%",
+          "source": "device"
+        },
+        {
+          "type": "bp_systolic",
+          "value": 120,
+          "unit": "mmHg",
+          "source": "device"
+        },
+        {
+          "type": "bp_diastolic",
+          "value": 80,
+          "unit": "mmHg",
+          "source": "device"
+        },
+        {
+          "type": "heart_rate",
+          "value": 88,
+          "unit": "bpm",
+          "source": "device"
+        }
+      ],
+      "expectedInterpretation": {
+        "spo2": {
+          "altitudeMeters": 2438,
+          "expectedRange": [92, 97],
+          "status": "critical",
+          "flaggedAbnormal": true,
+          "rawValue": 88,
+          "reason": "Hypoxemia at altitude with danger symptoms"
+        },
+        "bloodPressure": {
+          "status": "normal",
+          "systolic": 120,
+          "diastolic": 80,
+          "adjustedForAltitude": false,
+          "clinicalNote": "Standard normotensive range preserved; no upward shift for elevation."
+        },
+        "triage": {
+          "status": "red_flagged",
+          "primaryRedFlag": "Hypoxemia at altitude with danger symptoms",
+          "urgencyTier": "critical",
+          "isFastTrack": true
+        }
+      }
+    }
+  }
+}
