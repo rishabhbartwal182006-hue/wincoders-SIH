@@ -38,56 +38,7 @@ function App() {
   const [altitudeMeters, setAltitudeMeters] = useState("2438");
   const [staffPin, setStaffPin] = useState("");
   const [showNovaModal, setShowNovaModal] = useState(false);
-
-  // ── Listen to live data stream from NOVA Assistant via postMessage ──
-  useEffect(() => {
-    const handleNovaMessage = (event) => {
-      const data = event.data;
-      if (!data || data.source !== "nova-health-assistant") return;
-
-      if (data.type === "patient-data" || data.type === "session-ended" || data.type === "urgent") {
-        const record = data.payload;
-        if (!record) return;
-
-        // Auto-fill demographics
-        if (record.name) updatePatient("name", record.name);
-        if (record.age) updatePatient("age", String(record.age));
-        if (record.gender) updatePatient("gender", record.gender);
-
-        // Auto-fill symptoms
-        if (Array.isArray(record.symptoms) && record.symptoms.length > 0) {
-          const matched = [];
-          record.symptoms.forEach(sym => {
-            const lower = sym.toLowerCase();
-            if (lower.includes("chest")) matched.push("Chest discomfort");
-            if (lower.includes("breath") || lower.includes("सांस")) matched.push("Breathing difficulty");
-            if (lower.includes("fever") || lower.includes("बुखार")) matched.push("Fever");
-            if (lower.includes("headache") || lower.includes("सिर")) matched.push("Headache");
-            if (lower.includes("cough") || lower.includes("खांसी")) matched.push("Cough");
-            if (lower.includes("stomach") || lower.includes("पेट")) matched.push("Stomach pain");
-            if (lower.includes("nausea") || lower.includes("उल्टी")) matched.push("Nausea");
-          });
-          if (matched.length > 0) {
-            setSymptomList(prev => [...new Set([...prev, ...matched])]);
-          }
-        }
-
-        // Auto-fill vitals (e.g. glucose, BP, SpO2)
-        if (record.vitals) {
-          setVitals(prev => ({
-            ...prev,
-            bloodSugar: record.vitals.blood_glucose ? String(record.vitals.blood_glucose) : prev.bloodSugar,
-            bp: record.vitals.blood_pressure || prev.bp,
-            spo2: record.vitals.spo2 ? String(record.vitals.spo2) : prev.spo2,
-            heartRate: record.vitals.heart_rate ? String(record.vitals.heart_rate) : prev.heartRate,
-          }));
-        }
-      }
-    };
-
-    window.addEventListener("message", handleNovaMessage);
-    return () => window.removeEventListener("message", handleNovaMessage);
-  }, []);
+  const [reviewEditMode, setReviewEditMode] = useState(false);
 
   const [patient, setPatient] = useState({
     name: "",
@@ -111,6 +62,84 @@ function App() {
     heartRate: "",
     bloodSugar: "",
   });
+
+  // ── Listen to live data stream from NOVA Assistant via postMessage ──
+  useEffect(() => {
+    const handleNovaMessage = (event) => {
+      const data = event.data;
+      if (!data || data.source !== "nova-health-assistant") return;
+
+      if (
+        data.type === "patient-data" ||
+        data.type === "session-ended" ||
+        data.type === "urgent" ||
+        data.type === "go-to-report"
+      ) {
+        const record = data.payload;
+        if (!record) return;
+
+        // Auto-fill demographics
+        if (record.name) {
+          setPatient((prev) => ({ ...prev, name: record.name }));
+        }
+        if (record.age) {
+          setPatient((prev) => ({ ...prev, age: String(record.age) }));
+        }
+        if (record.gender) {
+          setPatient((prev) => ({ ...prev, gender: record.gender }));
+        }
+
+        // Auto-fill symptoms
+        if (Array.isArray(record.symptoms) && record.symptoms.length > 0) {
+          const matched = [];
+          record.symptoms.forEach((sym) => {
+            const lower = String(sym).toLowerCase();
+            if (lower.includes("chest")) matched.push("Chest discomfort");
+            if (lower.includes("breath") || lower.includes("सांस")) matched.push("Breathing difficulty");
+            if (lower.includes("fever") || lower.includes("बुखार") || lower.includes("ताप")) matched.push("Fever");
+            if (lower.includes("headache") || lower.includes("सिर")) matched.push("Headache");
+            if (lower.includes("cough") || lower.includes("खांसी")) matched.push("Cough");
+            if (lower.includes("stomach") || lower.includes("पेट")) matched.push("Stomach pain");
+            if (lower.includes("nausea") || lower.includes("उल्टी")) matched.push("Nausea");
+          });
+          if (matched.length > 0) {
+            setSymptomList((prev) => [...new Set([...prev, ...matched])]);
+          } else {
+            setSymptomList((prev) => [...new Set([...prev, ...record.symptoms])]);
+          }
+        }
+
+        // Auto-fill vitals (e.g. glucose, BP, SpO2, Heart Rate)
+        if (record.vitals) {
+          const v = record.vitals;
+          const sugar = v.blood_glucose_mg_dl ?? v.blood_glucose ?? v.bloodSugar;
+          const spo2Val = v.spo2_percent ?? v.spo2;
+          const hrVal = v.pulse_bpm ?? v.heart_rate ?? v.heartRate;
+          let bpVal = v.bp ?? v.blood_pressure;
+          if (!bpVal && v.systolic_bp && v.diastolic_bp) {
+            bpVal = `${v.systolic_bp}/${v.diastolic_bp}`;
+          }
+
+          setVitals((prev) => ({
+            ...prev,
+            bloodSugar: sugar ? String(sugar) : prev.bloodSugar,
+            bp: bpVal || prev.bp,
+            spo2: spo2Val ? String(spo2Val) : prev.spo2,
+            heartRate: hrVal ? String(hrVal) : prev.heartRate,
+          }));
+        }
+
+        // Auto-open final report page if requested or ready for review
+        if (data.type === "go-to-report" || record.ready_for_review) {
+          setShowNovaModal(false);
+          setStep(8);
+        }
+      }
+    };
+
+    window.addEventListener("message", handleNovaMessage);
+    return () => window.removeEventListener("message", handleNovaMessage);
+  }, []);
 
   const hasRedFlag =
     symptomList.includes("Chest discomfort") &&
@@ -994,32 +1023,193 @@ function App() {
               subtitle="Check the details before sending them for clinical review."
             />
 
-            <div className="review-list">
-              <div><span>Name</span><strong>{patient.name}</strong></div>
-              <div><span>Age</span><strong>{patient.age}</strong></div>
-              <div><span>Gender</span><strong>{patient.gender}</strong></div>
-              <div><span>Language</span><strong>{language}</strong></div>
-              <div><span>Mode</span><strong>{mode}</strong></div>
-              <div><span>Altitude</span><strong>{altitudeMeters || "2438"} m — {altitudeMode}</strong></div>
-              <div><span>Symptoms</span><strong>{symptomList.join(", ")}</strong></div>
-
-              {symptomList.includes("Chest discomfort") && (
-                <>
-                  <div><span>Site</span><strong>{hpi.site || "—"}</strong></div>
-                  <div><span>Onset</span><strong>{hpi.onset || "—"}</strong></div>
-                  <div><span>Character</span><strong>{hpi.character || "—"}</strong></div>
-                  <div><span>Radiation</span><strong>{hpi.radiation || "—"}</strong></div>
-                  <div><span>Associated</span><strong>{hpi.associated || "—"}</strong></div>
-                  <div><span>Severity</span><strong>{hpi.severity ? `${hpi.severity}/10` : "—"}</strong></div>
-                </>
-              )}
-
-              <div><span>Blood pressure</span><strong>{vitals.bp || "Not entered"}</strong></div>
-              <div><span>SpO₂</span><strong>{vitals.spo2 ? `${vitals.spo2}%` : "Not entered"}</strong></div>
-              <div><span>Heart rate</span><strong>{vitals.heartRate ? `${vitals.heartRate} bpm` : "Not entered"}</strong></div>
-              <div><span>Blood Sugar</span><strong>{vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : "Not entered"}</strong></div>
-              <div><span>Document</span><strong>{documentName || "None"}</strong></div>
+            {/* Top Micro-Adjustment action bar */}
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              background: reviewEditMode ? "#ecfdf5" : "#f0fdfa",
+              border: `1px solid ${reviewEditMode ? "#6ee7b7" : "#99f6e4"}`,
+              padding: "12px 18px",
+              borderRadius: "12px",
+              marginBottom: "16px"
+            }}>
+              <div>
+                <strong style={{ color: "#0f766e", display: "block", fontSize: "15px" }}>
+                  {reviewEditMode ? "✏️ Micro-Adjusting Report" : "📋 Final Intake Report"}
+                </strong>
+                <span style={{ fontSize: "12px", color: "#115e59" }}>
+                  {reviewEditMode
+                    ? "Adjust any numbers or patient info below before submitting."
+                    : "Review all recorded data. Click 'Micro Adjust' if you need to tweak any values."}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => setReviewEditMode(!reviewEditMode)}
+                style={{
+                  padding: "7px 16px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  background: reviewEditMode ? "#0f766e" : "#ffffff",
+                  color: reviewEditMode ? "#ffffff" : "#0f766e",
+                  border: "1px solid #0f766e",
+                  borderRadius: "8px",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.06)"
+                }}
+              >
+                {reviewEditMode ? "✓ Done Adjusting" : "✏️ Micro Adjust"}
+              </button>
             </div>
+
+            {/* Review and Micro-Adjust Content */}
+            {reviewEditMode ? (
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "16px",
+                background: "#f8fafc",
+                padding: "16px",
+                borderRadius: "12px",
+                border: "1px solid #e2e8f0",
+                marginBottom: "20px"
+              }}>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Patient Name</label>
+                  <input
+                    className="input-field"
+                    type="text"
+                    value={patient.name}
+                    onChange={(e) => setPatient(p => ({ ...p, name: e.target.value }))}
+                    style={{ width: "100%", marginTop: "4px" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Age</label>
+                  <input
+                    className="input-field"
+                    type="number"
+                    value={patient.age}
+                    onChange={(e) => setPatient(p => ({ ...p, age: e.target.value }))}
+                    style={{ width: "100%", marginTop: "4px" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Gender</label>
+                  <select
+                    className="input-field"
+                    value={patient.gender}
+                    onChange={(e) => setPatient(p => ({ ...p, gender: e.target.value }))}
+                    style={{ width: "100%", marginTop: "4px" }}
+                  >
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Blood Sugar (mg/dL)</label>
+                  <input
+                    className="input-field"
+                    type="number"
+                    value={vitals.bloodSugar}
+                    placeholder="e.g. 115"
+                    onChange={(e) => setVitals(v => ({ ...v, bloodSugar: e.target.value }))}
+                    style={{ width: "100%", marginTop: "4px" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>SpO₂ (%)</label>
+                  <input
+                    className="input-field"
+                    type="number"
+                    value={vitals.spo2}
+                    placeholder="e.g. 98"
+                    onChange={(e) => setVitals(v => ({ ...v, spo2: e.target.value }))}
+                    style={{ width: "100%", marginTop: "4px" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Heart Rate (bpm)</label>
+                  <input
+                    className="input-field"
+                    type="number"
+                    value={vitals.heartRate}
+                    placeholder="e.g. 74"
+                    onChange={(e) => setVitals(v => ({ ...v, heartRate: e.target.value }))}
+                    style={{ width: "100%", marginTop: "4px" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Blood Pressure</label>
+                  <input
+                    className="input-field"
+                    type="text"
+                    value={vitals.bp}
+                    placeholder="e.g. 120/80"
+                    onChange={(e) => setVitals(v => ({ ...v, bp: e.target.value }))}
+                    style={{ width: "100%", marginTop: "4px" }}
+                  />
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Reported Symptoms (Click to toggle)</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "6px" }}>
+                    {symptoms.map((s) => {
+                      const active = symptomList.includes(s.label);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => toggleSymptom(s.label)}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "16px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            border: `1px solid ${active ? "#0f766e" : "#cbd5e1"}`,
+                            background: active ? "#0f766e" : "#ffffff",
+                            color: active ? "#ffffff" : "#475569",
+                            cursor: "pointer"
+                          }}
+                        >
+                          {active ? `✓ ${s.label}` : `+ ${s.label}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="review-list">
+                <div><span>Name</span><strong>{patient.name || "Not entered"}</strong></div>
+                <div><span>Age</span><strong>{patient.age || "Not entered"}</strong></div>
+                <div><span>Gender</span><strong>{patient.gender || "Not entered"}</strong></div>
+                <div><span>Language</span><strong>{language}</strong></div>
+                <div><span>Mode</span><strong>{mode}</strong></div>
+                <div><span>Altitude</span><strong>{altitudeMeters || "2438"} m — {altitudeMode}</strong></div>
+                <div><span>Symptoms</span><strong>{symptomList.length ? symptomList.join(", ") : "None reported"}</strong></div>
+
+                {symptomList.includes("Chest discomfort") && (
+                  <>
+                    <div><span>Site</span><strong>{hpi.site || "—"}</strong></div>
+                    <div><span>Onset</span><strong>{hpi.onset || "—"}</strong></div>
+                    <div><span>Character</span><strong>{hpi.character || "—"}</strong></div>
+                    <div><span>Radiation</span><strong>{hpi.radiation || "—"}</strong></div>
+                    <div><span>Associated</span><strong>{hpi.associated || "—"}</strong></div>
+                    <div><span>Severity</span><strong>{hpi.severity ? `${hpi.severity}/10` : "—"}</strong></div>
+                  </>
+                )}
+
+                <div><span>Blood Sugar</span><strong style={{ color: "#0f766e" }}>{vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : "Not recorded"}</strong></div>
+                <div><span>SpO₂</span><strong>{vitals.spo2 ? `${vitals.spo2}%` : "Not entered"}</strong></div>
+                <div><span>Heart rate</span><strong>{vitals.heartRate ? `${vitals.heartRate} bpm` : "Not entered"}</strong></div>
+                <div><span>Blood pressure</span><strong>{vitals.bp || "Not entered"}</strong></div>
+                <div><span>Document</span><strong>{documentName || "None"}</strong></div>
+              </div>
+            )}
 
             {hasRedFlag && (
               <div className="alert-box">
@@ -1082,6 +1272,25 @@ function App() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => {
+                    setShowNovaModal(false);
+                    setStep(8);
+                  }}
+                  style={{
+                    background: "#0d9488",
+                    border: "none",
+                    color: "#ffffff",
+                    padding: "6px 14px",
+                    borderRadius: "8px",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.15)"
+                  }}
+                >
+                  📋 View Final Report
+                </button>
                 <button
                   onClick={() => window.open("http://localhost:3000", "_blank", "width=800,height=900")}
                   style={{
