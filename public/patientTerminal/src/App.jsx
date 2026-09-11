@@ -373,35 +373,6 @@ function App() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        {/* NOVA AI Assistant button - accessible at ANY step */}
-        <button
-          type="button"
-          onClick={() => setShowNovaModal(true)}
-          style={{
-            background: "linear-gradient(135deg, #0d9488, #059669)",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: "20px",
-            padding: "8px 18px",
-            fontSize: "13px",
-            fontWeight: 700,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            cursor: "pointer",
-            boxShadow: "0 2px 8px rgba(13, 148, 136, 0.3)",
-            transition: "all 0.2s ease"
-          }}
-          title="Ask NOVA Voice Assistant for help on this step"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" x2="12" y1="19" y2="22"/>
-          </svg>
-          <span>Ask NOVA Help</span>
-        </button>
-
         <a
           href="http://localhost:4000"
           className="portal-exit-link"
