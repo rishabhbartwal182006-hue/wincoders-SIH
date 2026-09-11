@@ -54,7 +54,8 @@ function buildInternalVitals(vitalsArray = []) {
         : 'touch-selected',
       confidence: reading.confidence ?? 1.0,
       timestamp: reading.captured_at
-    }
+    },
+    ...(reading.altitudeContext ? { altitudeContext: reading.altitudeContext } : {})
   };
 
   const latest = (type) => [...vitalsArray].reverse().find(v => v.type === type);
@@ -101,6 +102,7 @@ function sessionToInternalIntake(session) {
       phone: s.patient?.phone,
       provenanceMeta: { provenance: 'touch-selected', confidence: 1.0, timestamp: s.created_at }
     },
+    environment: s.environment,
     vitals: buildInternalVitals(s.vitals),
     chiefComplaints: intake.chief_complaint ? [{
       symptom: intake.chief_complaint.value,

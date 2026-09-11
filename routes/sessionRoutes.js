@@ -5,12 +5,14 @@ const router = express.Router();
 const Session = require('../models/Session');
 const HprAuthToken = require('../models/HprAuthToken');
 const ProvisionalIntake = require('../models/ProvisionalIntake');
+const AuditLog = require('../models/AuditLog');
 const { isMongoConnected, memoryStore } = require('../config/db');
 const { requireBearerToken } = require('../middleware/specAuth');
 const { analyzeDiscrepancies } = require('../services/discrepancyEngine');
 const { convertToFhirR4Bundle } = require('../services/fhirMapper');
 const specAdapter = require('../services/specAdapter');
 const { detectRedFlags, mergeRedFlags } = require('../services/redFlagRules');
+const { interpretVitals, DISCLAIMER } = require('../services/altitudeAdjustmentService');
 
 // ---- persistence helpers (mirrors the Mongo/in-memory fallback pattern already used elsewhere in this repo) ----
 
@@ -57,6 +59,7 @@ function recomputeClinicalChecks(sessionDoc, io) {
       status: sessionDoc.status,
       redFlags: newRedFlags
     });
+
   }
 }
 
@@ -162,6 +165,82 @@ router.post('/sessions/:sessionId/vitals', requireBearerToken, async (req, res) 
   const saved = await saveSession(session);
   const savedReading = asPlain(saved).vitals.slice(-1)[0];
   return res.status(201).json(savedReading);
+});
+
+// GET /sessions/:sessionId/vitals/interpreted
+router.get('/sessions/:sessionId/vitals/interpreted', requireBearerToken, async (req, res) => {
+  const session = await findSession(req.params.sessionId);
+  if (!session) return notFound(res);
+
+  const plain = asPlain(session);
+  const environment = plain.environment || { altitudeMeters: 2438, altitudeSource: 'facility_config' };
+  const interpreted = interpretVitals(plain.vitals, environment, plain.intake);
+
+  return res.status(200).json({
+    success: true,
+    sessionId: plain.session_id,
+    environment,
+    interpretedVitals: interpreted,
+    disclaimer: DISCLAIMER
+  });
+});
+
+// POST /sessions/:sessionId/environment
+router.post('/sessions/:sessionId/environment', requireBearerToken, async (req, res) => {
+  const session = await findSession(req.params.sessionId);
+  if (!session) return notFound(res);
+
+  const {
+    altitudeMeters,
+    altitudeFeet,
+    altitudeSource,
+    altitudeConfidence,
+    timeAtAltitudeHours,
+    residenceAltitudeMeters,
+    acclimatizationStatus
+  } = req.body || {};
+
+  const meters = typeof altitudeMeters === 'number' ? altitudeMeters : 2438;
+  const feet = typeof altitudeFeet === 'number' ? altitudeFeet : Math.round(meters * 3.28084);
+
+  session.environment = {
+    altitudeMeters: meters,
+    altitudeFeet: feet,
+    altitudeSource: altitudeSource === 'facility_config' ? 'facility_config' : 'staff_manual',
+    altitudeConfidence: altitudeConfidence ?? 1.0,
+    timeAtAltitudeHours: timeAtAltitudeHours ?? null,
+    residenceAltitudeMeters: residenceAltitudeMeters ?? null,
+    acclimatizationStatus: acclimatizationStatus || 'unacclimatized'
+  };
+
+  recomputeClinicalChecks(session, req.app.get('io'));
+  const saved = await saveSession(session);
+
+  // Log audit trail
+  const auditData = {
+    logId: `AUDIT-ALT-${Date.now()}`,
+    action: 'ALTITUDE_CONTEXT_APPLIED',
+    sessionId: session.session_id,
+    performedBy: req.staffUser?.hpr_id || 'KIOSK_TERMINAL',
+    altitudeMeters: meters,
+    altitudeSource: session.environment.altitudeSource,
+    algorithmVersion: 'altitude-mvp-v1',
+    details: { environment: session.environment },
+    timestamp: new Date()
+  };
+  if (isMongoConnected()) {
+    await AuditLog.create(auditData).catch(() => {});
+  } else {
+    await memoryStore.save('AuditLog', auditData).catch(() => {});
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Environment altitude context updated successfully.',
+    environment: asPlain(saved).environment,
+    vitals: asPlain(saved).vitals,
+    disclaimer: DISCLAIMER
+  });
 });
 
 // ============================= Documents =============================

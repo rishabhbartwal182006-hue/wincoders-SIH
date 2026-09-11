@@ -7,6 +7,7 @@ const hprAuthMiddleware = require('../middleware/hprAuth');
 const { convertToFhirR4Bundle, generateFHIRBundle } = require('../services/fhirMapper');
 const { syncToAbdmNetwork } = require('../services/abdmSyncService');
 const { isMongoConnected, memoryStore } = require('../config/db');
+const { interpretVitals, DISCLAIMER } = require('../services/altitudeAdjustmentService');
 
 /**
  * Format patient record into Doctor Dashboard Summary & Session structures
@@ -20,31 +21,36 @@ function buildDashboardSummary(record) {
         diastolic: record.vitals.bloodPressure.diastolic?.value,
         unit: "mmHg",
         provenance: record.vitals.bloodPressure.systolic?.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.bloodPressure.systolic?.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.bloodPressure.systolic?.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.bloodPressure.systolic?.altitudeContext || null
       } : null,
       spo2: record.vitals?.spo2 ? {
         value: record.vitals.spo2.value,
         unit: record.vitals.spo2.unit || "%",
         provenance: record.vitals.spo2.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.spo2.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.spo2.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.spo2.altitudeContext || null
       } : null,
       heartRate: record.vitals?.heartRate ? {
         value: record.vitals.heartRate.value,
         unit: record.vitals.heartRate.unit || "bpm",
         provenance: record.vitals.heartRate.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.heartRate.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.heartRate.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.heartRate.altitudeContext || null
       } : null,
       temperature: record.vitals?.temperature ? {
         value: record.vitals.temperature.value,
         unit: record.vitals.temperature.unit || "°F",
         provenance: record.vitals.temperature.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.temperature.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.temperature.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.temperature.altitudeContext || null
       } : null,
       bloodGlucose: record.vitals?.bloodGlucose ? {
         value: record.vitals.bloodGlucose.value,
         unit: record.vitals.bloodGlucose.unit || "mg/dL",
         provenance: record.vitals.bloodGlucose.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.bloodGlucose.provenanceMeta?.confidence || 1.0
+        confidence: record.vitals.bloodGlucose.provenanceMeta?.confidence || 1.0,
+        altitudeContext: record.vitals.bloodGlucose.altitudeContext || null
       } : null
     },
     section2_chiefComplaints: (record.chiefComplaints || []).map(cc => ({
@@ -103,8 +109,14 @@ function buildDashboardSummary(record) {
     sessionId: record.intakeId,
     patientId: record.abhaId,
     patientName: record.patientDemographics?.fullName,
-    age: record.patientDemographics?.age ?? null,        // ← ADD
-    gender: record.patientDemographics?.gender || null,  // ← ADD
+    age: record.patientDemographics?.age ?? null,
+    gender: record.patientDemographics?.gender || null,
+    environment: record.environment || {
+      altitudeMeters: 2438,
+      altitudeFeet: 8000,
+      altitudeSource: 'facility_config',
+      acclimatizationStatus: 'unacclimatized'
+    },
     lastUpdated: record.updatedAt || record.createdAt,
     status: record.status,
     triageResult: {
@@ -117,11 +129,26 @@ function buildDashboardSummary(record) {
       timestamp: record.createdAt
     },
     vitals: {
-      HEART_RATE: record.vitals?.heartRate ? { value: record.vitals.heartRate.value } : null,
-      SPO2: record.vitals?.spo2 ? { value: record.vitals.spo2.value } : null,
-      BLOOD_PRESSURE: record.vitals?.bloodPressure ? { value: `${record.vitals.bloodPressure.systolic?.value}/${record.vitals.bloodPressure.diastolic?.value}` } : null,
-      TEMPERATURE: record.vitals?.temperature ? { value: record.vitals.temperature.value } : null,
-      BLOOD_GLUCOSE: record.vitals?.bloodGlucose ? { value: record.vitals.bloodGlucose.value } : null
+      HEART_RATE: record.vitals?.heartRate ? {
+        value: record.vitals.heartRate.value,
+        altitudeContext: record.vitals.heartRate.altitudeContext
+      } : null,
+      SPO2: record.vitals?.spo2 ? {
+        value: record.vitals.spo2.value,
+        altitudeContext: record.vitals.spo2.altitudeContext
+      } : null,
+      BLOOD_PRESSURE: record.vitals?.bloodPressure ? {
+        value: `${record.vitals.bloodPressure.systolic?.value}/${record.vitals.bloodPressure.diastolic?.value}`,
+        altitudeContext: record.vitals.bloodPressure.systolic?.altitudeContext
+      } : null,
+      TEMPERATURE: record.vitals?.temperature ? {
+        value: record.vitals.temperature.value,
+        altitudeContext: record.vitals.temperature.altitudeContext
+      } : null,
+      BLOOD_GLUCOSE: record.vitals?.bloodGlucose ? {
+        value: record.vitals.bloodGlucose.value,
+        altitudeContext: record.vitals.bloodGlucose.altitudeContext
+      } : null
     },
     symptoms: {
       primary: record.chiefComplaints && record.chiefComplaints[0] ? {
@@ -139,6 +166,12 @@ function buildDashboardSummary(record) {
     intakeId: record.intakeId,
     abhaId: record.abhaId,
     patientDemographics: record.patientDemographics,
+    environment: record.environment || {
+      altitudeMeters: 2438,
+      altitudeFeet: 8000,
+      altitudeSource: 'facility_config',
+      acclimatizationStatus: 'unacclimatized'
+    },
     status: record.status,
     triage: record.triage,
     hprSignatureBlock: record.hprSignatureBlock || null,
@@ -147,7 +180,8 @@ function buildDashboardSummary(record) {
     discrepancyFlags,
     session,
     createdAt: record.createdAt,
-    updatedAt: record.updatedAt
+    updatedAt: record.updatedAt,
+    disclaimer: DISCLAIMER
   };
 }
 
@@ -560,6 +594,126 @@ async function handleFhirExport(req, res) {
 
 router.get('/fhir/bundle/:intakeId', handleFhirExport);
 router.get('/export/fhir/:intakeId', handleFhirExport);
+
+/**
+ * POST /api/v1/clinical/patient/:id/override-altitude
+ * Allows attending physician to override patient altitude context with audit logging
+ */
+router.post('/patient/:id/override-altitude', async (req, res) => {
+  try {
+    const patientIdentifier = req.params.id;
+    const { altitudeMeters, altitudeSource, overrideReason, doctorNotes, acclimatizationStatus } = req.body || {};
+
+    let record = null;
+    if (isMongoConnected()) {
+      record = await ProvisionalIntake.findOne({
+        $or: [{ abhaId: patientIdentifier }, { intakeId: patientIdentifier }]
+      });
+    } else {
+      record = await memoryStore.findOne('ProvisionalIntake', { abhaId: patientIdentifier }) ||
+               await memoryStore.findOne('ProvisionalIntake', { intakeId: patientIdentifier });
+    }
+
+    if (!record) {
+      return res.status(404).json({ success: false, error: 'RECORD_NOT_FOUND', message: `No record found for ${patientIdentifier}` });
+    }
+
+    const meters = typeof altitudeMeters === 'number' ? altitudeMeters : 2438;
+    record.environment = {
+      altitudeMeters: meters,
+      altitudeFeet: Math.round(meters * 3.28084),
+      altitudeSource: altitudeSource === 'facility_config' ? 'facility_config' : 'staff_manual',
+      altitudeConfidence: 1.0,
+      acclimatizationStatus: acclimatizationStatus || 'unacclimatized'
+    };
+
+    // Re-run interpretation
+    if (record.vitals) {
+      const interpreted = interpretVitals(record.vitals, record.environment, record.chiefComplaints);
+      interpreted.forEach(it => {
+        if (it.type === 'spo2' && record.vitals.spo2) {
+          record.vitals.spo2.altitudeContext = {
+            altitudeMeters: it.altitudeMeters,
+            expectedRange: it.expectedRange,
+            status: it.status,
+            adjustedForAltitude: it.adjustedForAltitude,
+            algorithmVersion: it.algorithmVersion
+          };
+        }
+        if (it.type === 'heart_rate' && record.vitals.heartRate) {
+          record.vitals.heartRate.altitudeContext = {
+            altitudeMeters: it.altitudeMeters,
+            expectedRange: it.expectedRange,
+            status: it.status,
+            adjustedForAltitude: it.adjustedForAltitude,
+            algorithmVersion: it.algorithmVersion
+          };
+        }
+        if (it.type === 'bp_systolic' && record.vitals.bloodPressure?.systolic) {
+          record.vitals.bloodPressure.systolic.altitudeContext = {
+            altitudeMeters: it.altitudeMeters,
+            expectedRange: it.expectedRange,
+            status: it.status,
+            adjustedForAltitude: it.adjustedForAltitude,
+            algorithmVersion: it.algorithmVersion
+          };
+        }
+      });
+    }
+
+    if (isMongoConnected()) {
+      await ProvisionalIntake.updateOne({ intakeId: record.intakeId }, {
+        environment: record.environment,
+        vitals: record.vitals
+      });
+    } else {
+      await memoryStore.updateOne('ProvisionalIntake', { intakeId: record.intakeId }, record);
+    }
+
+    // Append-only Audit Log
+    const auditData = {
+      logId: `AUDIT-OVERRIDE-${Date.now()}`,
+      action: 'ALTITUDE_INTERPRETATION_OVERRIDDEN',
+      intakeId: record.intakeId,
+      abhaId: record.abhaId,
+      performedBy: req.body.doctorName || 'ATTENDING_PHYSICIAN',
+      userId: req.body.hprId || req.body.doctorId || 'DOC-01',
+      altitudeMeters: meters,
+      altitudeSource: record.environment.altitudeSource,
+      algorithmVersion: 'altitude-mvp-v1',
+      details: {
+        reason: overrideReason || 'Physician adjusted altitude context',
+        notes: doctorNotes || ''
+      },
+      timestamp: new Date()
+    };
+    if (isMongoConnected()) {
+      await AuditLog.create(auditData).catch(() => {});
+    } else {
+      await memoryStore.save('AuditLog', auditData).catch(() => {});
+    }
+
+    const summary = buildDashboardSummary(record);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('TRIAGE_UPDATED', {
+        sessionId: record.intakeId,
+        patientId: record.abhaId,
+        status: record.status,
+        triageResult: summary.session.triageResult
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Altitude interpretation overridden and audit log generated.',
+      data: summary
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 module.exports = router;
 module.exports.buildDashboardSummary = buildDashboardSummary;

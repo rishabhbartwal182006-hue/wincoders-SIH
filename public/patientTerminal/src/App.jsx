@@ -30,6 +30,9 @@ function App() {
   const [listening, setListening] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [documentName, setDocumentName] = useState("");
+  const [altitudeMode, setAltitudeMode] = useState("facility_config");
+  const [altitudeMeters, setAltitudeMeters] = useState("2438");
+  const [staffPin, setStaffPin] = useState("");
 
   const [patient, setPatient] = useState({
     name: "",
@@ -177,6 +180,9 @@ function App() {
     setListening(false);
     setSubmitted(false);
     setDocumentName("");
+    setAltitudeMode("facility_config");
+    setAltitudeMeters("2438");
+    setStaffPin("");
     setPatient({ name: "", age: "", gender: "" });
     setSymptomList([]);
     setHpi({
@@ -192,12 +198,23 @@ function App() {
 
   const handleSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (altitudeMode === "staff_manual" && !staffPin.trim()) {
+      alert(language === "हिन्दी" ? "स्टाफ़ ओवरराइड PIN आवश्यक है।" : "A staff override PIN is required.");
+      return;
+    }
 
     const formData = {
       patientId: `PT-${Date.now().toString().slice(-4)}`,
       name: patient.name || "Anonymous Patient",
       age: patient.age || "—",
       symptoms: symptomList.length ? symptomList : ["General intake"],
+      environment: {
+        altitudeMeters: Number(altitudeMeters) || 2438,
+        altitudeFeet: Math.round((Number(altitudeMeters) || 2438) * 3.28084),
+        altitudeSource: altitudeMode,
+        altitudeConfidence: 1,
+        acclimatizationStatus: "unacclimatized"
+      },
       vitals: {
         bp: vitals.bp || "120/80",
         spo2: vitals.spo2 || "98",
@@ -396,6 +413,20 @@ function App() {
                   <p>Choose answers on the screen.</p>
                 </div>
               </button>
+            </div>
+
+            <div className="field-block">
+              <label>{language === "हिन्दी" ? "ऊंचाई संदर्भ" : "Altitude context"}</label>
+              <select value={altitudeMode} onChange={(e) => setAltitudeMode(e.target.value)}>
+                <option value="facility_config">{language === "हिन्दी" ? "सुविधा डिफ़ॉल्ट: 2,438 मीटर" : "Facility default: 2,438 m"}</option>
+                <option value="staff_manual">{language === "हिन्दी" ? "स्टाफ़ मैन्युअल ओवरराइड" : "Staff manual override"}</option>
+              </select>
+              {altitudeMode === "staff_manual" && (
+                <div className="vitals-grid" style={{ marginTop: "10px" }}>
+                  <input aria-label="Altitude in metres" value={altitudeMeters} onChange={(e) => setAltitudeMeters(e.target.value)} placeholder="Altitude (m)" />
+                  <input aria-label="Staff override PIN" type="password" value={staffPin} onChange={(e) => setStaffPin(e.target.value)} placeholder={language === "हिन्दी" ? "स्टाफ़ PIN" : "Staff override PIN"} />
+                </div>
+              )}
             </div>
 
             <button className="primary-btn" onClick={() => setStep(2)}>
@@ -825,6 +856,7 @@ function App() {
               <div><span>Gender</span><strong>{patient.gender}</strong></div>
               <div><span>Language</span><strong>{language}</strong></div>
               <div><span>Mode</span><strong>{mode}</strong></div>
+              <div><span>Altitude</span><strong>{altitudeMeters || "2438"} m — {altitudeMode}</strong></div>
               <div><span>Symptoms</span><strong>{symptomList.join(", ")}</strong></div>
 
               {symptomList.includes("Chest discomfort") && (
@@ -857,6 +889,7 @@ function App() {
             <button className="primary-btn" onClick={handleSubmit}>
               Send for clinical review ✓
             </button>
+            <p className="help-text">Decision-support MVP. Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed.</p>
             <BackButton target={7} />
           </section>
         )}

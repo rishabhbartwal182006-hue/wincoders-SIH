@@ -72,7 +72,22 @@ const VitalReadingSchema = new mongoose.Schema({
   captured_by_staff_id: { type: String, default: null },
   captured_at: { type: Date, required: true, default: Date.now },
   confidence: { type: Number, min: 0, max: 1, default: 1.0 },
-  flagged_abnormal: { type: Boolean, default: false }
+  flagged_abnormal: { type: Boolean, default: false },
+  altitudeContext: {
+    type: new mongoose.Schema({
+      altitudeMeters: { type: Number },
+      expectedRange: [{ type: Number }],
+      status: {
+        type: String,
+        enum: ['normal', 'borderline', 'critical', 'below-expected', 'above-expected', 'caution']
+      },
+      reason: { type: String },
+      adjustedForAltitude: { type: Boolean, default: false },
+      algorithmVersion: { type: String, default: 'altitude-mvp-v1' },
+      cautionNote: { type: String, default: null }
+    }, { _id: false }),
+    default: null
+  }
 });
 
 const DocumentRecordSchema = new mongoose.Schema({
@@ -175,6 +190,22 @@ const SessionSchema = new mongoose.Schema({
       hie_cm_consent_id: { type: String, default: null },
       _id: false
     }]
+  },
+  environment: {
+    type: new mongoose.Schema({
+      altitudeMeters: { type: Number, default: 2438 },
+      altitudeFeet: { type: Number, default: 8000 },
+      altitudeSource: { type: String, enum: ['facility_config', 'staff_manual'], default: 'facility_config' },
+      altitudeConfidence: { type: Number, min: 0, max: 1, default: 1.0 },
+      timeAtAltitudeHours: { type: Number },
+      residenceAltitudeMeters: { type: Number },
+      acclimatizationStatus: {
+        type: String,
+        enum: ['unacclimatized', 'partial', 'acclimatized', 'native'],
+        default: 'unacclimatized'
+      }
+    }, { _id: false }),
+    default: () => ({ altitudeMeters: 2438, altitudeFeet: 8000, altitudeSource: 'facility_config', acclimatizationStatus: 'unacclimatized' })
   },
   intake: { type: IntakeSchema, default: () => ({}) },
   vitals: [VitalReadingSchema],

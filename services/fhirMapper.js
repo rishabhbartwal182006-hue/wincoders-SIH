@@ -105,6 +105,10 @@ function convertToFhirR4Bundle(intake) {
 
   // 3. Observations - Vitals
   if (intake.vitals) {
+    const altMeters = intake.environment?.altitudeMeters || intake.vitals?.spo2?.altitudeContext?.altitudeMeters || 2438;
+    const altSource = intake.environment?.altitudeSource || 'facility_config';
+    const acclim = intake.environment?.acclimatizationStatus || 'unacclimatized';
+
     // Blood Pressure Observation
     if (intake.vitals.bloodPressure) {
       const bpObsId = generateUUID();
@@ -139,6 +143,21 @@ function convertToFhirR4Bundle(intake) {
         subject: { reference: patientRefId },
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
+        extension: [
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/altitude-context",
+            valueString: `${altMeters} m; source=${altSource}; acclimatization=${acclim}`
+          },
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/algorithm-version",
+            valueString: "altitude-mvp-v1"
+          }
+        ],
+        note: [
+          {
+            text: `BP threshold invariant with elevation (${altMeters} m). No altitude adjustment applied to BP thresholds.`
+          }
+        ],
         component: []
       };
 
@@ -177,6 +196,7 @@ function convertToFhirR4Bundle(intake) {
     // SpO2 Observation
     if (intake.vitals.spo2) {
       const spo2ObsId = generateUUID();
+      const statusText = intake.vitals.spo2?.altitudeContext?.status || (Number(intake.vitals.spo2.value) < 90 ? 'critical' : 'normal');
       const spo2Obs = {
         resourceType: "Observation",
         id: spo2ObsId.replace("urn:uuid:", ""),
@@ -187,6 +207,21 @@ function convertToFhirR4Bundle(intake) {
         subject: { reference: patientRefId },
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
+        extension: [
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/altitude-context",
+            valueString: `${altMeters} m; source=${altSource}; acclimatization=${acclim}`
+          },
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/algorithm-version",
+            valueString: intake.vitals.spo2?.altitudeContext?.algorithmVersion || "altitude-mvp-v1"
+          }
+        ],
+        note: [
+          {
+            text: `Altitude-adjusted interpretation: ${statusText} at ${altMeters} m.`
+          }
+        ],
         valueQuantity: {
           value: Number(intake.vitals.spo2.value),
           unit: intake.vitals.spo2.unit || "%",
@@ -211,6 +246,21 @@ function convertToFhirR4Bundle(intake) {
         subject: { reference: patientRefId },
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
+        extension: [
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/altitude-context",
+            valueString: `${altMeters} m; source=${altSource}; acclimatization=${acclim}`
+          },
+          {
+            url: "https://medikiosk.example/fhir/StructureDefinition/algorithm-version",
+            valueString: "altitude-mvp-v1"
+          }
+        ],
+        note: [
+          {
+            text: `Altitude compensatory delta evaluated at ${altMeters} m.`
+          }
+        ],
         valueQuantity: {
           value: Number(intake.vitals.heartRate.value),
           unit: intake.vitals.heartRate.unit || "bpm",
@@ -225,6 +275,7 @@ function convertToFhirR4Bundle(intake) {
     // Blood Glucose Observation
     if (intake.vitals.bloodGlucose) {
       const bgObsId = generateUUID();
+      const glucoseContext = intake.vitals.bloodGlucose?.altitudeContext;
       const bgObs = {
         resourceType: "Observation",
         id: bgObsId.replace("urn:uuid:", ""),
@@ -235,6 +286,13 @@ function convertToFhirR4Bundle(intake) {
         subject: { reference: patientRefId },
         encounter: { reference: encounterRefId },
         effectiveDateTime: timestamp,
+        extension: [{
+          url: "https://medikiosk.example/fhir/StructureDefinition/altitude-context",
+          valueString: `${altMeters} m; source=${altSource}; acclimatization=${acclim}`
+        }],
+        note: [{
+          text: glucoseContext?.cautionNote || `Altitude-adjusted interpretation: ${glucoseContext?.status || 'standard glucose thresholds unchanged'}.`
+        }],
         valueQuantity: {
           value: Number(intake.vitals.bloodGlucose.value),
           unit: intake.vitals.bloodGlucose.unit || "mg/dL",
