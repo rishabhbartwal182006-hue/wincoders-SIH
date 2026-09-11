@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import "./App.css";
 import VitalScanner from "./VitalScanner";
 
@@ -37,6 +37,57 @@ function App() {
   const [altitudeMode, setAltitudeMode] = useState("facility_config");
   const [altitudeMeters, setAltitudeMeters] = useState("2438");
   const [staffPin, setStaffPin] = useState("");
+  const [showNovaModal, setShowNovaModal] = useState(false);
+
+  // ── Listen to live data stream from NOVA Assistant via postMessage ──
+  useEffect(() => {
+    const handleNovaMessage = (event) => {
+      const data = event.data;
+      if (!data || data.source !== "nova-health-assistant") return;
+
+      if (data.type === "patient-data" || data.type === "session-ended" || data.type === "urgent") {
+        const record = data.payload;
+        if (!record) return;
+
+        // Auto-fill demographics
+        if (record.name) updatePatient("name", record.name);
+        if (record.age) updatePatient("age", String(record.age));
+        if (record.gender) updatePatient("gender", record.gender);
+
+        // Auto-fill symptoms
+        if (Array.isArray(record.symptoms) && record.symptoms.length > 0) {
+          const matched = [];
+          record.symptoms.forEach(sym => {
+            const lower = sym.toLowerCase();
+            if (lower.includes("chest")) matched.push("Chest discomfort");
+            if (lower.includes("breath") || lower.includes("सांस")) matched.push("Breathing difficulty");
+            if (lower.includes("fever") || lower.includes("बुखार")) matched.push("Fever");
+            if (lower.includes("headache") || lower.includes("सिर")) matched.push("Headache");
+            if (lower.includes("cough") || lower.includes("खांसी")) matched.push("Cough");
+            if (lower.includes("stomach") || lower.includes("पेट")) matched.push("Stomach pain");
+            if (lower.includes("nausea") || lower.includes("उल्टी")) matched.push("Nausea");
+          });
+          if (matched.length > 0) {
+            setSymptomList(prev => [...new Set([...prev, ...matched])]);
+          }
+        }
+
+        // Auto-fill vitals (e.g. glucose, BP, SpO2)
+        if (record.vitals) {
+          setVitals(prev => ({
+            ...prev,
+            bloodSugar: record.vitals.blood_glucose ? String(record.vitals.blood_glucose) : prev.bloodSugar,
+            bp: record.vitals.blood_pressure || prev.bp,
+            spo2: record.vitals.spo2 ? String(record.vitals.spo2) : prev.spo2,
+            heartRate: record.vitals.heart_rate ? String(record.vitals.heart_rate) : prev.heartRate,
+          }));
+        }
+      }
+    };
+
+    window.addEventListener("message", handleNovaMessage);
+    return () => window.removeEventListener("message", handleNovaMessage);
+  }, []);
 
   const [patient, setPatient] = useState({
     name: "",
@@ -399,7 +450,25 @@ function App() {
               </div>
             </div>
 
-            <div className="mode-grid">
+            <div className="mode-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+              <button
+                className={mode === "Nova" ? "mode-card selected" : "mode-card"}
+                onClick={() => {
+                  setMode("Nova");
+                  setShowNovaModal(true);
+                }}
+                style={{
+                  border: mode === "Nova" ? "2px solid #168f91" : "1px solid #c4e7e7",
+                  background: mode === "Nova" ? "#f2fafa" : "#ffffff"
+                }}
+              >
+                <span className="mode-icon" style={{ background: "#e0f2f1", color: "#00796b" }}>AI</span>
+                <div>
+                  <strong>NOVA Assistant</strong>
+                  <p>{language === "हिन्दी" ? "AI से बोलकर जांच कराएं" : "Speak with virtual health assistant"}</p>
+                </div>
+              </button>
+
               <button
                 className={mode === "Talk" ? "mode-card selected" : "mode-card"}
                 onClick={() => setMode("Talk")}
@@ -970,6 +1039,97 @@ function App() {
           </section>
         )}
       </main>
+
+      {/* NOVA Voice Health Assistant Modal */}
+      {showNovaModal && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+          padding: "20px"
+        }}>
+          <div style={{
+            background: "#ffffff",
+            borderRadius: "20px",
+            width: "100%",
+            maxWidth: "760px",
+            height: "88vh",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.35)",
+            border: "1px solid #dce5e8"
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: "16px 24px",
+              background: "#168f91",
+              color: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "20px" }}>🤖</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>NOVA — AI Health Assistant</h3>
+                  <p style={{ margin: 0, fontSize: "12px", opacity: 0.9 }}>Talk naturally in Hindi or English • Real-time patient sync</p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => window.open("http://localhost:3000", "_blank", "width=800,height=900")}
+                  style={{
+                    background: "rgba(255, 255, 255, 0.2)",
+                    border: "none",
+                    color: "#ffffff",
+                    padding: "6px 12px",
+                    borderRadius: "8px",
+                    fontWeight: 600,
+                    fontSize: "12px",
+                    cursor: "pointer"
+                  }}
+                >
+                  ↗ Open Full Window
+                </button>
+                <button
+                  onClick={() => setShowNovaModal(false)}
+                  style={{
+                    background: "rgba(255, 255, 255, 0.2)",
+                    border: "none",
+                    color: "#ffffff",
+                    padding: "6px 14px",
+                    borderRadius: "8px",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: "pointer"
+                  }}
+                >
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+
+            {/* Embedded Standalone Nova Assistant App */}
+            <iframe
+              src="http://localhost:3000"
+              title="NOVA Virtual Health Assistant"
+              style={{
+                flex: 1,
+                width: "100%",
+                border: "none",
+                background: "#000000"
+              }}
+              allow="microphone; camera; autoplay; fullscreen"
+            />
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>
