@@ -36,9 +36,10 @@ app.use(morgan('dev'));
 // Serve Public Static Assets (Kiosk UI at /kiosk.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve Frontend Command Center Static UI under /dashboard
+// Serve Frontend Command Center Static UI under /dashboard and /triage/dashboard
 const dashboardPath = path.join(__dirname, 'triage-engine', 'dashboard');
 app.use('/dashboard', express.static(dashboardPath));
+app.use('/triage/dashboard', express.static(dashboardPath));
 
 // Direct Kiosk HTML Shortcut Routes
 app.get('/kiosk', (req, res) => {
@@ -64,6 +65,52 @@ app.post('/api/v1/intake', kioskRoutes.handleKioskIngestion);
 app.post('/api/v1/doctor/verify', hprAuthMiddleware, clinicalRoutes.handleClinicalCommit);
 app.get('/api/v1/export/fhir/:intakeId', clinicalRoutes.handleFhirExport);
 
+// In-Memory Patient Submissions Queue
+let patientQueue = [];
+
+// POST /api/patient/submit
+app.post('/api/patient/submit', (req, res) => {
+  const { patientId, name, age, symptoms, vitals } = req.body || {};
+
+  const generatedId = patientId || `PT-${Date.now().toString().slice(-4)}`;
+  const newPatient = {
+    patientId: generatedId,
+    name: name || "Anonymous Patient",
+    age: age || "—",
+    symptoms: Array.isArray(symptoms) ? symptoms : symptoms ? [symptoms] : [],
+    vitals: vitals || {},
+    timestamp: new Date().toISOString(),
+    status: "waiting"
+  };
+
+  patientQueue.push(newPatient);
+
+  // Broadcast to Socket.IO clients if active
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('patient:new', newPatient);
+    io.emit('kiosk:intake_submitted', {
+      sessionId: newPatient.patientId,
+      patientId: newPatient.patientId,
+      patientName: newPatient.name,
+      triageLevel: 'ROUTINE',
+      status: 'waiting',
+      timestamp: newPatient.timestamp
+    });
+  }
+
+  return res.status(201).json({
+    success: true,
+    message: "Patient queued successfully",
+    data: newPatient
+  });
+});
+
+// GET /api/doctor/queue
+app.get('/api/doctor/queue', (req, res) => {
+  return res.status(200).json(patientQueue);
+});
+
 // Health Check Endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -80,7 +127,7 @@ app.get('/health', (req, res) => {
 
 // Root Route — Serve Landing Page
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'landingPage.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Global 404 Handler

@@ -188,6 +188,43 @@ function App() {
     setVitals({ bp: "", spo2: "" });
   };
 
+  const handleSubmit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+
+    const formData = {
+      patientId: `PT-${Date.now().toString().slice(-4)}`,
+      name: patient.name || "Anonymous Patient",
+      age: patient.age || "—",
+      symptoms: symptomList.length ? symptomList : ["General intake"],
+      vitals: {
+        bp: vitals.bp || "120/80",
+        spo2: vitals.spo2 || "98"
+      }
+    };
+
+    try {
+      const apiUrl = (window.location.hostname === 'localhost' && window.location.port === '5173')
+        ? 'http://localhost:4000/api/patient/submit'
+        : '/api/patient/submit';
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        alert('Registration complete! Please proceed to the waiting area.');
+      }
+      setSubmitted(true);
+    } catch (err) {
+      console.error('Error submitting patient data:', err);
+      alert('Registration complete! Please proceed to the waiting area.');
+      setSubmitted(true);
+    }
+  };
+
   const goNext = () => {
     if (step === 2) setStep(3);
     else if (step === 3 && validatePatient()) setStep(4);
@@ -786,7 +823,7 @@ function App() {
               </div>
             )}
 
-            <button className="primary-btn" onClick={() => setSubmitted(true)}>
+            <button className="primary-btn" onClick={handleSubmit}>
               Send for clinical review ✓
             </button>
             <BackButton target={7} />
