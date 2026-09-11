@@ -372,7 +372,32 @@ function App() {
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        {/* NOVA AI Assistant button - accessible at ANY step */}
+        <button
+          type="button"
+          onClick={() => setShowNovaModal(true)}
+          style={{
+            background: "linear-gradient(135deg, #0d9488, #059669)",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "20px",
+            padding: "8px 16px",
+            fontSize: "13px",
+            fontWeight: 700,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            cursor: "pointer",
+            boxShadow: "0 2px 8px rgba(13, 148, 136, 0.3)",
+            transition: "all 0.2s ease"
+          }}
+          title="Ask NOVA Voice Assistant for help on this step"
+        >
+          <span style={{ fontSize: "16px" }}>🤖</span>
+          <span>Ask NOVA Help</span>
+        </button>
+
         <a
           href="http://localhost:4000"
           className="portal-exit-link"
@@ -1326,7 +1351,7 @@ function App() {
 
             {/* Embedded Standalone Nova Assistant App */}
             <iframe
-              src="http://localhost:3000"
+              src={`http://localhost:3000?step=${step}`}
               title="NOVA Virtual Health Assistant"
               style={{
                 flex: 1,
@@ -1338,6 +1363,37 @@ function App() {
             />
           </div>
         </div>
+      )}
+
+      {/* Floating NOVA Assistant Button — instant help at any step */}
+      {!showNovaModal && (
+        <button
+          type="button"
+          onClick={() => setShowNovaModal(true)}
+          style={{
+            position: "fixed",
+            bottom: "28px",
+            right: "28px",
+            background: "linear-gradient(135deg, #0d9488, #059669)",
+            color: "#ffffff",
+            border: "2px solid #a7f3d0",
+            borderRadius: "50px",
+            padding: "12px 22px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            boxShadow: "0 8px 24px rgba(13, 148, 136, 0.45)",
+            cursor: "pointer",
+            zIndex: 1000,
+            fontWeight: 700,
+            fontSize: "14px",
+            transition: "all 0.25s ease"
+          }}
+          title={`Need help with Step ${step}? Ask NOVA`}
+        >
+          <span style={{ fontSize: "20px" }}>🤖</span>
+          <span>Ask NOVA for Help</span>
+        </button>
       )}
 
       <Footer />
