@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./App.css";
+import VitalScanner from "./VitalScanner";
 
 const languages = ["English", "हिन्दी", "தமிழ்", "తెలుగు", "বাংলা"];
 
@@ -49,6 +50,7 @@ function App() {
   const [vitals, setVitals] = useState({
     bp: "",
     spo2: "",
+    bloodSugar: "",
   });
 
   const hasRedFlag =
@@ -185,7 +187,7 @@ function App() {
       associated: "",
       severity: "",
     });
-    setVitals({ bp: "", spo2: "" });
+    setVitals({ bp: "", spo2: "", bloodSugar: "" });
   };
 
   const handleSubmit = async (e) => {
@@ -198,7 +200,8 @@ function App() {
       symptoms: symptomList.length ? symptomList : ["General intake"],
       vitals: {
         bp: vitals.bp || "120/80",
-        spo2: vitals.spo2 || "98"
+        spo2: vitals.spo2 || "98",
+        bloodSugar: vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : undefined
       }
     };
 
@@ -767,6 +770,33 @@ function App() {
                 />
                 <small>%</small>
               </div>
+
+              <div className="vital-card" style={{ borderColor: vitals.bloodSugar ? "#43a047" : undefined }}>
+                <span>Blood Sugar (Glucose)</span>
+                <input
+                  value={vitals.bloodSugar}
+                  onChange={(e) =>
+                    setVitals({ ...vitals, bloodSugar: e.target.value })
+                  }
+                  placeholder="e.g. 148"
+                />
+                <small>mg/dL</small>
+              </div>
+            </div>
+
+            {/* Glucometer scanner via ESP32-CAM + Groq AI */}
+            <div style={{ marginTop: "20px" }}>
+              <p style={{ fontSize: "13px", color: "#555", marginBottom: "10px", fontWeight: 600 }}>
+                🩺 Or scan your glucometer automatically:
+              </p>
+              <VitalScanner
+                sessionId={`kiosk-${patient.name.replace(/\s+/g,"-") || "guest"}-${Date.now()}`}
+                onScanSuccess={(reading) => {
+                  if (reading && reading.value) {
+                    setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
+                  }
+                }}
+              />
             </div>
 
             <div className="info-note">
@@ -810,6 +840,7 @@ function App() {
 
               <div><span>Blood pressure</span><strong>{vitals.bp || "Not entered"}</strong></div>
               <div><span>SpO₂</span><strong>{vitals.spo2 ? `${vitals.spo2}%` : "Not entered"}</strong></div>
+              <div><span>Blood Sugar</span><strong>{vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : "Not entered"}</strong></div>
               <div><span>Document</span><strong>{documentName || "None"}</strong></div>
             </div>
 

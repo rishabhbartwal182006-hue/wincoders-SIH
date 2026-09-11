@@ -12,6 +12,7 @@ const kioskRoutes = require('./routes/kioskRoutes');
 const clinicalRoutes = require('./routes/clinicalRoutes');
 const hprRoutes = require('./routes/hprRoutes');
 const sessionRoutes = require('./routes/sessionRoutes');
+const vitalsRoutes  = require('./routes/vitalsRoutes');
 const hprAuthMiddleware = require('./middleware/hprAuth');
 
 const app = express();
@@ -55,6 +56,9 @@ app.use('/api/v1/hpr', hprRoutes);
 // Coexists with the routes above — see services/specAdapter.js for how the two
 // data shapes bridge into the same discrepancy/FHIR logic.
 app.use('/api/v1', sessionRoutes);
+
+// Vital Scanner — ESP32-CAM + Groq AI glucometer reading
+app.use('/api/v1/vitals', vitalsRoutes);
 
 // Compatibility Base Routes for Frontend Event APIs (/api/events/...)
 app.use('/api/events', kioskRoutes);
