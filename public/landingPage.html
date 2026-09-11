@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediKiosk — Your Smart Healthcare Gateway</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    /* Top Half Deep Blue Container with Background Image & Radial Blend */
+    .bg-top-blue {
+      background: 
+        radial-gradient(circle at 50% 20%, rgba(13, 59, 167, 0.88) 0%, rgba(6, 33, 109, 0.94) 50%, rgba(3, 16, 60, 0.98) 100%),
+        url("https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=1920&q=80") center/cover no-repeat;
+    }
+
+    /* Glass Feature Pills */
+    .feature-pill {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(8px);
+    }
+
+    /* Card Glow Shadows */
+    .glow-blue {
+      box-shadow: 0 20px 40px -10px rgba(29, 78, 216, 0.4);
+    }
+    .glow-teal {
+      box-shadow: 0 20px 40px -10px rgba(13, 148, 136, 0.4);
+    }
+
+    /* Card 1 Vector Graphic Stylings */
+    .kiosk-graphic {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    /* Card 2 Vector Graphic Stylings */
+    .doctor-graphic {
+      background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+  </style>
+</head>
+<body class="bg-white font-sans text-slate-800 min-h-screen flex flex-col justify-between antialiased select-none">
+
+  <!-- UPPER HALF: DEEP BLUE CONTAINER WITH BACKGROUND IMAGE -->
+  <div class="bg-top-blue text-white pb-36 relative overflow-hidden">
+    
+    <!-- HEADER NAVBAR -->
+    <header class="max-w-7xl mx-auto px-8 py-6 flex items-center justify-between z-10 relative">
+      <!-- Logo & Name (Top Left) -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-gradient-to-tr from-cyan-400 to-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/30">
+          <i class="fa-solid fa-square-plus text-white text-xl"></i>
+        </div>
+        <span class="text-2xl font-black tracking-wider text-white">
+          Medi<span class="text-cyan-400">kiosk</span>
+        </span>
+      </div>
+
+      <!-- Quick Nav Links -->
+      <div class="flex items-center gap-6 text-xs text-slate-300 font-medium">
+        <div class="hidden sm:flex items-center gap-1.5 hover:text-white cursor-pointer">
+          <i class="fa-solid fa-globe text-slate-400"></i> Language <i class="fa-solid fa-chevron-down text-[10px]"></i>
+        </div>
+        <div class="hidden sm:flex items-center gap-1.5 hover:text-white cursor-pointer">
+          <i class="fa-solid fa-headset text-slate-400"></i> Help Desk
+        </div>
+        <div class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] px-3 py-1 rounded-full font-semibold">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Systems Online
+        </div>
+      </div>
+    </header>
+
+    <!-- HERO TEXT SECTION (WIDER LAYOUT & WIDER TEXT SPACING) -->
+    <main class="max-w-5xl mx-auto px-6 text-center mt-6 z-10 relative">
+      <h1 class="text-4xl md:text-6xl font-black text-white tracking-wide mb-4 drop-shadow-md">
+        Your Smart Healthcare Gateway
+      </h1>
+
+      <!-- Intro Subtitle (Wider text layout) -->
+      <p class="max-w-3xl mx-auto text-base md:text-lg text-slate-100 leading-relaxed font-normal tracking-wide mb-10 drop-shadow-sm">
+        Welcome to Medikiosk, the intelligent, self-service point-of-care portal. We streamline patient onboarding, dynamic triage, and vitals capture to seamlessly connect patients and doctors in real time.
+      </p>
+
+      <!-- Feature Badges -->
+      <div class="flex flex-wrap items-center justify-center gap-4 text-xs md:text-sm text-slate-100 font-medium tracking-wide">
+        <span class="feature-pill px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-sm">
+          <i class="fa-solid fa-bolt text-amber-400"></i> Quick Check-In
+        </span>
+        <span class="feature-pill px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-sm">
+          <i class="fa-solid fa-id-card text-cyan-400"></i> ABHA Integration
+        </span>
+        <span class="feature-pill px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-sm">
+          <i class="fa-solid fa-heart-pulse text-rose-400"></i> Real-time Triage
+        </span>
+        <span class="feature-pill px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-sm">
+          <i class="fa-solid fa-lock text-emerald-400"></i> Secure EMR Sync
+        </span>
+      </div>
+    </main>
+  </div>
+
+  <!-- LOWER HALF: WHITE CONTAINER WITH OVERLAPPING CARDS -->
+  <div class="bg-white flex-1 relative pb-12">
+    <div class="max-w-5xl mx-auto px-6 -mt-24">
+      
+      <!-- DUAL CARDS GRID -->
+      <div class="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        
+        <!-- CARD 1: PATIENT KIOSK -->
+        <div class="bg-gradient-to-b from-[#1d61e8] to-[#1142b3] text-white rounded-3xl p-6 border border-blue-400/40 glow-blue flex flex-col justify-between relative overflow-hidden h-[310px] group transition-all duration-300 hover:-translate-y-1">
+          <div class="flex justify-between items-start z-10">
+            <div class="max-w-[52%]">
+              <div class="flex items-center gap-2 mb-2">
+                <h2 class="text-2xl font-black tracking-wider leading-tight uppercase">PATIENT<br>KIOSK</h2>
+                <div class="w-8 h-8 rounded-lg bg-blue-400/20 border border-blue-300/30 flex items-center justify-center text-cyan-300 text-sm">
+                  <i class="fa-solid fa-id-badge"></i>
+                </div>
+              </div>
+              <p class="text-blue-100 text-xs leading-relaxed mt-2 tracking-wide">
+                Check-in, scan documents, verify your identity, and measure vitals with automated assistance.
+              </p>
+            </div>
+
+            <!-- Digital Kiosk Graphic -->
+            <div class="w-[42%] h-36 rounded-2xl kiosk-graphic shadow-inner flex flex-col items-center justify-center relative p-3 text-center overflow-hidden">
+              <div class="w-12 h-16 bg-slate-900 rounded-lg border-2 border-cyan-400/80 flex flex-col items-center justify-center shadow-lg mb-1 relative">
+                <div class="w-2 h-2 rounded-full bg-cyan-400 animate-ping absolute top-1"></div>
+                <i class="fa-solid fa-fingerprint text-cyan-300 text-lg mt-2"></i>
+              </div>
+              <span class="text-[10px] font-bold text-cyan-200 tracking-wider uppercase">Interactive Terminal</span>
+            </div>
+          </div>
+
+          <!-- Action Button -->
+          <a href="/patientTerminal/dist/index.html" class="w-full py-3 bg-[#3275f8] hover:bg-[#2563eb] text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all z-10 mt-4 tracking-wider">
+            Start Patient Portal <i class="fa-solid fa-arrow-right text-[11px]"></i>
+          </a>
+        </div>
+
+        <!-- CARD 2: DOCTOR PORTAL -->
+        <div class="bg-gradient-to-b from-[#0a233c] to-[#041c22] text-white rounded-3xl p-6 border border-teal-500/40 glow-teal flex flex-col justify-between relative overflow-hidden h-[310px] group transition-all duration-300 hover:-translate-y-1">
+          <div class="flex justify-between items-start z-10">
+            <div class="max-w-[52%]">
+              <div class="flex items-center gap-2 mb-2">
+                <h2 class="text-2xl font-black tracking-wider leading-tight uppercase">DOCTOR<br>PORTAL</h2>
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-teal-300 text-sm">
+                  <i class="fa-solid fa-user-doctor"></i>
+                </div>
+              </div>
+              <p class="text-slate-300 text-xs leading-relaxed mt-2 tracking-wide">
+                Access live queues, monitor dynamic triage, edit SOAP notes, and manage clinical EMRs.
+              </p>
+            </div>
+
+            <!-- Digital Doctor Graphic -->
+            <div class="w-[42%] h-36 rounded-2xl doctor-graphic shadow-inner flex flex-col items-center justify-center relative p-3 text-center overflow-hidden">
+              <div class="w-16 h-12 bg-slate-900 rounded-lg border-2 border-teal-400/80 flex flex-col items-center justify-center shadow-lg mb-1 relative">
+                <i class="fa-solid fa-chart-line text-teal-300 text-base"></i>
+                <div class="w-10 h-1 bg-teal-400/50 rounded-full mt-1"></div>
+              </div>
+              <span class="text-[10px] font-bold text-teal-200 tracking-wider uppercase">EMR Dashboard</span>
+            </div>
+          </div>
+
+          <!-- Action Button -->
+          <a href="/dashboard/index.html" class="w-full py-3 bg-[#0d9488] hover:bg-[#0f766e] text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all z-10 mt-4 tracking-wider">
+            Access Doctor Gateway <i class="fa-solid fa-arrow-right text-[11px]"></i>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="bg-white py-4 text-center text-xs text-slate-400 border-t border-slate-100 tracking-wider">
+    MediKiosk Point-of-Care Portal • System Online
+  </footer>
+
+</body>
+</html>

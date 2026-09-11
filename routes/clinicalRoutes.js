@@ -103,6 +103,8 @@ function buildDashboardSummary(record) {
     sessionId: record.intakeId,
     patientId: record.abhaId,
     patientName: record.patientDemographics?.fullName,
+    age: record.patientDemographics?.age ?? null,        // ← ADD
+    gender: record.patientDemographics?.gender || null,  // ← ADD
     lastUpdated: record.updatedAt || record.createdAt,
     status: record.status,
     triageResult: {

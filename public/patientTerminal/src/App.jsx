@@ -227,9 +227,31 @@ function App() {
         </div>
       </div>
 
-      <div className="kiosk-status">
-        <span className="status-dot" />
-        Kiosk ready
+      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <a
+          href="http://localhost:4000"
+          className="portal-exit-link"
+          style={{
+            color: "#168f91",
+            textDecoration: "none",
+            fontSize: "13px",
+            fontWeight: "600",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "8px 14px",
+            borderRadius: "8px",
+            background: "#f0f9f9",
+            border: "1px solid #cce8e8",
+            transition: "all 0.2s ease"
+          }}
+        >
+          ← Return to Portal
+        </a>
+        <div className="kiosk-status">
+          <span className="status-dot" />
+          Kiosk ready
+        </div>
       </div>
     </header>
   );

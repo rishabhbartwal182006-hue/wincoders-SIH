@@ -1,189 +1,468 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MediKiosk | Doctor Command Center</title>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
+  <title>MediKiosk — Doctor Command Center</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+
   <link rel="stylesheet" href="/dashboard/styles.css" />
-  <style>
-    .badge-provisional {
-      background: #f59e0b;
-      color: #000;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .badge-verified {
-      background: #16a34a;
-      color: #fff;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .soap-box {
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 12px;
-    }
-    .soap-title {
-      font-size: 12px;
-      font-weight: 700;
-      color: #38bdf8;
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .completeness-bar-container {
-      background: #334155;
-      border-radius: 10px;
-      height: 10px;
-      width: 100%;
-      overflow: hidden;
-      margin-top: 6px;
-    }
-    .completeness-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #f59e0b, #16a34a);
-      width: 0%;
-      transition: width 0.4s ease;
-    }
-    .omission-chip {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid #ef4444;
-      color: #fca5a5;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      display: inline-block;
-      margin: 2px;
-    }
-    .matrix-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-      margin-top: 8px;
-    }
-    .matrix-table th, .matrix-table td {
-      border: 1px solid #334155;
-      padding: 8px;
-      text-align: center;
-    }
-    .matrix-table th {
-      background: #1e293b;
-      color: #38bdf8;
-    }
-    .risk-high { color: #ef4444; font-weight: 700; }
-    .risk-medium { color: #f59e0b; font-weight: 700; }
-    .risk-low { color: #16a34a; font-weight: 700; }
-    .btn-action-primary {
-      background: linear-gradient(135deg, #16a34a, #0284c7);
-      color: #fff;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      width: 100%;
-    }
-    .btn-action-secondary {
-      background: #334155;
-      color: #38bdf8;
-      border: 1px solid #0284c7;
-      padding: 10px 16px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 8px;
-      width: 100%;
-    }
-  </style>
 </head>
+
 <body>
-  <div id="toast-root" aria-live="polite"></div>
+
+  <!-- =========================================================
+       APP SHELL
+  ========================================================== -->
+
   <div class="app-shell">
+
+    <!-- =======================================================
+         SIDEBAR
+    ======================================================== -->
+
     <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">✚</div>
-        <div><strong>MediKiosk</strong><span>Doctor Command Center</span></div>
+
+      <div class="sidebar-brand">
+        <div class="brand-mark">+</div>
+
+        <div class="brand-copy">
+          <strong>MediKiosk</strong>
+          <span>DOCTOR COMMAND CENTER</span>
+        </div>
       </div>
-      <nav>
-        <button class="nav-item active" data-view="queue"><span>▦</span>Live Queue</button>
-        <button class="nav-item" data-view="alerts"><span>⚠</span>Critical Alerts</button>
-        <button class="nav-item" data-view="audit"><span>☷</span>Audit Trail</button>
-        <a href="/kiosk.html" target="_blank" style="text-decoration:none;"><button class="nav-item"><span>🖥</span>Patient Intake Terminal</button></a>
+
+      <div class="sidebar-divider"></div>
+
+      <nav class="sidebar-nav" aria-label="Primary navigation">
+
+        <button
+          class="nav-item active"
+          data-nav="queue"
+          type="button"
+        >
+          <span class="nav-icon">▣</span>
+          <span class="nav-label">Live Queue</span>
+          <span class="nav-count" id="nav-queue-count">0</span>
+        </button>
+
+        <button
+          class="nav-item"
+          data-nav="emergency"
+          type="button"
+        >
+          <span class="nav-icon">△</span>
+          <span class="nav-label">Critical Alerts</span>
+          <span
+            class="nav-count nav-count-danger"
+            id="nav-emergency-count"
+          >
+            0
+          </span>
+        </button>
+
+        <button
+          class="nav-item"
+          data-nav="audit"
+          type="button"
+        >
+          <span class="nav-icon">▤</span>
+          <span class="nav-label">Audit Trail</span>
+        </button>
+
       </nav>
-      <div class="sidebar-foot">
-        <div class="system-state"><i id="connection-dot"></i><span id="connection-text">Connecting…</span></div>
-        <div class="system-note">Real-time triage stream<br/>Socket.IO + HPR Lock + SOAP</div>
+
+      <div class="sidebar-bottom">
+
+        <div class="connection-state">
+          <span class="connection-dot" id="connection-dot"></span>
+
+          <div>
+            <strong id="connection-label">
+              Connecting
+            </strong>
+
+            <span>
+              Real-time triage stream
+            </span>
+          </div>
+        </div>
+
+        <div class="sidebar-tech">
+          Socket.IO · HPR Lock · SOAP
+        </div>
+
       </div>
+
     </aside>
 
+
+    <!-- =======================================================
+         MAIN
+    ======================================================== -->
+
     <main class="main">
-      <header class="topbar">
-        <div>
-          <div class="eyebrow">CLINICAL OPERATIONS</div>
-          <h1>Live Patient Queue</h1>
-          <p>Real-time triage queue, clinical discrepancy checking, SOAP EMR view, and Post-OPD care loop.</p>
+
+      <!-- =====================================================
+           COMMAND BAR
+      ====================================================== -->
+
+      <header class="command-topbar">
+
+        <div class="command-left">
+
+          <div class="breadcrumb">
+            <span>Clinical Operations</span>
+            <b>›</b>
+            <strong>Live Queue</strong>
+          </div>
+
+          <div class="global-search">
+
+            <span class="search-symbol">⌕</span>
+
+            <input
+              id="global-search"
+              type="search"
+              placeholder="Search patient or encounter..."
+              autocomplete="off"
+            />
+
+            <kbd>/</kbd>
+
+          </div>
+
         </div>
-        <div class="top-actions">
-          <button class="ghost-btn" id="refresh-btn">↻ Refresh</button>
-          <button class="primary-btn" id="seed-btn">Load Demo Patients</button>
+
+        <div class="doctor-tools">
+
+          <button
+            class="notification-button"
+            id="notification-button"
+            type="button"
+            aria-label="Critical alerts"
+          >
+            ♧
+            <span
+              class="notification-dot hidden"
+              id="notification-dot"
+            ></span>
+          </button>
+
+          <div class="doctor-profile">
+
+            <div class="doctor-avatar">
+              RS
+            </div>
+
+            <div class="doctor-profile-copy">
+              <strong>Dr. Rajesh Sharma</strong>
+              <span>Clinical Review</span>
+            </div>
+
+            <span class="doctor-chevron">⌄</span>
+
+          </div>
+
         </div>
+
       </header>
 
-      <section class="stats-grid" id="stats-grid">
-        <article class="stat-card"><span>Total Encounters</span><strong id="stat-total">0</strong><small>Persisted sessions</small></article>
-        <article class="stat-card urgent"><span>Urgent</span><strong id="stat-urgent">0</strong><small>Priority review</small></article>
-        <article class="stat-card emergency"><span>Emergency</span><strong id="stat-emergency">0</strong><small>Immediate attention</small></article>
-        <article class="stat-card routine"><span>Routine</span><strong id="stat-routine">0</strong><small>Standard queue</small></article>
-      </section>
 
-      <section class="workspace">
-        <div class="queue-panel panel">
-          <div class="panel-head">
-            <div><h2>Encounter Queue</h2><span id="queue-meta">0 patients</span></div>
-            <div class="filters">
-              <button class="filter active" data-filter="ALL">All</button>
-              <button class="filter" data-filter="EMERGENCY">Emergency</button>
-              <button class="filter" data-filter="URGENT">Urgent</button>
-              <button class="filter" data-filter="ROUTINE">Routine</button>
-            </div>
+      <!-- =====================================================
+           PAGE HEADER
+      ====================================================== -->
+
+      <section class="page-header">
+
+        <div>
+          <div class="eyebrow">
+            <span></span>
+            CLINICAL OPERATIONS
           </div>
-          <div id="queue" class="queue-list"></div>
+
+          <h1 id="greeting">
+            Good evening, Doctor
+          </h1>
+
+          <p>
+            Review incoming kiosk encounters, triage decisions and
+            physician treatment plans.
+          </p>
         </div>
 
-        <aside class="patient-panel panel" id="patient-panel">
-          <div class="empty-state">
-            <div class="empty-icon">◉</div>
-            <h3>Select an encounter</h3>
-            <p>Choose a patient from the queue to inspect vitals, discrepancies, Interactive SOAP View, HPR Write-Lock, and Post-OPD Care Loop.</p>
+        <div class="page-actions">
+
+          <div class="live-indicator">
+            <span></span>
+            Live data
           </div>
-        </aside>
+
+          <button
+            class="button secondary"
+            id="refresh-btn"
+            type="button"
+          >
+            ↻
+            Refresh
+          </button>
+
+          <button
+            class="button primary"
+            id="seed-btn"
+            type="button"
+          >
+            ▣
+            Load Demo Patients
+          </button>
+
+        </div>
+
       </section>
+
+
+      <!-- =====================================================
+           STATS
+      ====================================================== -->
+
+      <section class="stats-grid">
+
+        <article class="stat-card">
+          <span class="stat-accent neutral"></span>
+
+          <div>
+            <strong id="stat-total">0</strong>
+            <span>Persisted sessions</span>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-accent urgent"></span>
+
+          <div>
+            <strong id="stat-urgent">0</strong>
+            <span>Priority review</span>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-accent emergency"></span>
+
+          <div>
+            <strong id="stat-emergency">0</strong>
+            <span>Immediate attention</span>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-accent routine"></span>
+
+          <div>
+            <strong id="stat-routine">0</strong>
+            <span>Standard queue</span>
+          </div>
+        </article>
+
+      </section>
+
+
+      <!-- =====================================================
+           WORKSPACE
+      ====================================================== -->
+
+      <section class="workspace">
+
+        <!-- ===================================================
+             LEFT QUEUE
+        ==================================================== -->
+
+        <aside class="queue-panel">
+
+          <div class="queue-header">
+
+            <div>
+              <h2 id="queue-title">
+                Encounter Queue
+              </h2>
+
+              <p id="queue-subtitle">
+                0 patients
+              </p>
+            </div>
+
+            <div class="queue-live">
+              <span></span>
+              LIVE
+            </div>
+
+          </div>
+
+
+          <div class="queue-filters">
+
+            <button
+              class="filter-button active"
+              data-filter="all"
+              type="button"
+            >
+              All
+            </button>
+
+            <button
+              class="filter-button"
+              data-filter="emergency"
+              type="button"
+            >
+              Emergency
+            </button>
+
+            <button
+              class="filter-button"
+              data-filter="urgent"
+              type="button"
+            >
+              Urgent
+            </button>
+
+            <button
+              class="filter-button"
+              data-filter="routine"
+              type="button"
+            >
+              Routine
+            </button>
+
+          </div>
+
+
+          <div
+            class="queue-list"
+            id="queue"
+          ></div>
+
+        </aside>
+
+
+        <!-- ===================================================
+             ENCOUNTER WORKSTATION
+        ==================================================== -->
+
+        <section
+          class="encounter-panel"
+          id="patient-panel"
+        >
+
+          <!-- Empty state is rendered by app.js -->
+
+        </section>
+
+      </section>
+
     </main>
+
   </div>
 
-  <div class="modal-backdrop hidden" id="alert-modal">
-    <div class="alert-modal">
-      <div class="alert-icon">!</div>
-      <div class="modal-copy">
-        <div class="eyebrow danger">EMERGENCY ESCALATION</div>
-        <h2 id="modal-title">Immediate doctor attention required</h2>
-        <p id="modal-reason"></p>
-        <div class="rule-chips" id="modal-rules"></div>
-        <div class="modal-meta" id="modal-meta"></div>
+
+  <!-- =========================================================
+       EMERGENCY MODAL
+  ========================================================== -->
+
+  <div
+    class="modal-backdrop hidden"
+    id="alert-modal"
+  >
+
+    <div
+      class="alert-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+
+      <div class="modal-icon">
+        !
       </div>
-      <button class="modal-close" id="modal-close">×</button>
+
+      <div class="modal-content">
+
+        <div class="modal-eyebrow">
+          IMMEDIATE ATTENTION
+        </div>
+
+        <h2 id="modal-title">
+          Emergency encounter
+        </h2>
+
+        <p id="modal-reason"></p>
+
+        <div
+          class="modal-rules"
+          id="modal-rules"
+        ></div>
+
+        <div
+          class="modal-meta"
+          id="modal-meta"
+        ></div>
+
+        <div class="modal-actions">
+
+          <button
+            class="button secondary"
+            id="modal-close"
+            type="button"
+          >
+            Close
+          </button>
+
+          <button
+            class="button danger"
+            id="modal-review"
+            type="button"
+          >
+            Review Encounter
+          </button>
+
+        </div>
+
+      </div>
+
     </div>
+
   </div>
+
+
+  <!-- =========================================================
+       TOAST
+  ========================================================== -->
+
+  <div
+    class="toast hidden"
+    id="toast"
+  ></div>
+
+
+  <!-- =========================================================
+       SOCKET.IO
+  ========================================================== -->
 
   <script src="/socket.io/socket.io.js"></script>
+
+  <!-- =========================================================
+       DASHBOARD LOGIC
+  ========================================================== -->
+
   <script src="/dashboard/app.js"></script>
+
 </body>
 </html>

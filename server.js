@@ -78,22 +78,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Root Welcome Endpoint
+// Root Route — Serve Landing Page
 app.get('/', (req, res) => {
-  res.status(200).json({
-    message: 'Welcome to MediKiosk Self-Service Patient Intake & Doctor Command Center',
-    kioskTerminal: `/kiosk.html`,
-    doctorDashboard: `/dashboard/index.html`,
-    health: `/health`,
-    docs: {
-      kioskIntake: 'POST /api/v1/intake (or POST /api/v1/kiosk/intake)',
-      doctorSummary: 'GET /api/v1/clinical/patient/:id/summary',
-      clinicalCommit: 'POST /api/v1/doctor/verify (or POST /api/v1/clinical/commit)',
-      fhirExport: 'GET /api/v1/export/fhir/:intakeId (or GET /api/v1/clinical/fhir/bundle/:intakeId)',
-      demoSeed: 'POST /api/events/demo/seed',
-      hprLogin: 'POST /api/v1/hpr/login'
-    }
-  });
+  res.sendFile(path.join(__dirname, 'public', 'landingPage.html'));
 });
 
 // Global 404 Handler
@@ -170,7 +157,7 @@ app.set('io', io);
 
 // Start HTTP & Socket Server
 if (require.main === module) {
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`=======================================================`);
     console.log(` MediKiosk Unified Server running on port ${PORT}`);
     console.log(` Patient Intake Kiosk: http://localhost:${PORT}/kiosk.html`);
