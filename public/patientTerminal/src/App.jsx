@@ -129,8 +129,8 @@ function App() {
           }));
         }
 
-        // Auto-open final report page if requested or ready for review
-        if (data.type === "go-to-report" || record.ready_for_review) {
+        // Open final report page ONLY when user explicitly pressed the button / go-to-report sent
+        if (data.type === "go-to-report") {
           setShowNovaModal(false);
           setStep(8);
         }
