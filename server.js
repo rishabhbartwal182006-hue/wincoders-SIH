@@ -46,6 +46,9 @@ app.use('/triage/dashboard', express.static(dashboardPath));
 app.get('/kiosk', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'kiosk.html'));
 });
+app.get(['/patient-terminal', '/terminal'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'patientTerminal', 'dist', 'index.html'));
+});
 
 // API Base Routes Mounting
 app.use('/api/v1/kiosk', kioskRoutes);

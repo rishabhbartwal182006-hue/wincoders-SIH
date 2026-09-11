@@ -16,18 +16,18 @@ const API_BASE = 'http://localhost:4000';
 function StatusBadge({ label, online }) {
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-      background: online ? '#e8f5e9' : '#fbe9e7',
-      color: online ? '#2e7d32' : '#bf360c',
-      border: `1px solid ${online ? '#a5d6a7' : '#ffab91'}`
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+      background: online ? '#edf8f8' : '#fef2f2',
+      color: online ? '#126e70' : '#b91c1c',
+      border: `1px solid ${online ? '#c4e7e7' : '#fecaca'}`
     }}>
       <span style={{
         width: 7, height: 7, borderRadius: '50%',
-        background: online ? '#43a047' : '#e64a19',
+        background: online ? '#168f91' : '#ef4444',
         display: 'inline-block'
       }} />
-      {label}: {online ? 'Online' : 'Offline'}
+      {label}: {online ? 'Ready' : 'Offline'}
     </span>
   );
 }
@@ -65,12 +65,11 @@ export default function VitalScanner({ sessionId, onScanSuccess }) {
 
   const handleScan = async () => {
     if (!sessionId) {
-      setError('No active session. Please start a session first.');
+      setError('No active session.');
       return;
     }
     setScanning(true);
     setError(null);
-    setResult(null);
 
     try {
       const res = await fetch(`${API_BASE}/api/v1/vitals/scan`, {
@@ -81,7 +80,7 @@ export default function VitalScanner({ sessionId, onScanSuccess }) {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || `Server error ${res.status}`);
+        throw new Error(data.error || `Scan failed (${res.status})`);
       }
       setResult(data.reading);
       if (onScanSuccess && data.reading) {
@@ -94,185 +93,150 @@ export default function VitalScanner({ sessionId, onScanSuccess }) {
     }
   };
 
-  // ── Render ────────────────────────────────────────────────
   const canScan = scannerOnline && esp32Online && !scanning;
 
   return (
     <div style={{
-      background: '#fafafa',
-      border: '1px solid #e0e0e0',
-      borderRadius: 12,
-      padding: '20px 24px',
-      maxWidth: 420,
-      fontFamily: 'Inter, Segoe UI, sans-serif'
+      background: '#fafcfc',
+      border: '1px solid #dce5e8',
+      borderRadius: '16px',
+      padding: '28px 24px',
+      marginTop: '10px',
+      fontFamily: 'Inter, Arial, sans-serif'
     }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <span style={{ fontSize: 22 }}>🩺</span>
+      {/* Top Header & Status */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a2e' }}>
-            Vital Scanner
-          </div>
-          <div style={{ fontSize: 12, color: '#888' }}>
-            Glucometer · ESP32-CAM · Groq AI
-          </div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#173b4d', margin: 0 }}>
+            Device Scanner
+          </h3>
+        </div>
+
+        {/* Live Badges */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <StatusBadge label="Scanner" online={scannerOnline} />
+          <StatusBadge label="Device" online={esp32Online} />
         </div>
       </div>
 
-      {/* Status badges */}
-      {statusLoading ? (
-        <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
-          Checking device status…
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          <StatusBadge label="AI Scanner" online={scannerOnline} />
-          <StatusBadge label="ESP32-CAM"  online={esp32Online}   />
-        </div>
-      )}
-
-      {/* Instructions */}
-      {!result && !scanning && (
-        <ol style={{
-          margin: '0 0 14px 0', padding: '0 0 0 18px',
-          fontSize: 13, color: '#555', lineHeight: 1.8
-        }}>
-          <li>Place the glucometer display in front of the camera</li>
-          <li>Ensure the reading is visible and well-lit</li>
-          <li>Click <strong>Scan Now</strong> — the red LED will blink</li>
-        </ol>
-      )}
-
-      {/* Scan button */}
+      {/* Main Scan Trigger Button */}
       <button
+        type="button"
         onClick={handleScan}
         disabled={!canScan}
         style={{
           width: '100%',
-          padding: '11px 0',
-          borderRadius: 8,
+          padding: '15px 24px',
+          borderRadius: 10,
           border: 'none',
           cursor: canScan ? 'pointer' : 'not-allowed',
-          background: canScan
-            ? 'linear-gradient(135deg, #1565c0, #0d47a1)'
-            : '#bdbdbd',
-          color: '#fff',
+          background: canScan ? '#168f91' : '#b0bec5',
+          color: '#ffffff',
           fontWeight: 700,
-          fontSize: 14,
-          letterSpacing: 0.3,
-          transition: 'opacity 0.2s',
+          fontSize: 15,
+          letterSpacing: '0.4px',
+          transition: 'all 0.2s ease',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 8
+          gap: 10,
+          boxShadow: canScan ? '0 4px 14px rgba(22, 143, 145, 0.25)' : 'none'
         }}
       >
         {scanning ? (
           <>
             <span style={{
-              width: 14, height: 14,
+              width: 16, height: 16,
               border: '2px solid rgba(255,255,255,0.4)',
-              borderTopColor: '#fff',
+              borderTopColor: '#ffffff',
               borderRadius: '50%',
               display: 'inline-block',
               animation: 'vs-spin 0.8s linear infinite'
             }} />
-            Scanning…
+            Reading Measurement…
           </>
         ) : (
-          <>📷 Scan Now</>
+          <>Get Vitals</>
         )}
       </button>
 
-      {/* Error */}
+      {/* Error Message */}
       {error && (
         <div style={{
-          marginTop: 12, padding: '10px 14px',
-          background: '#ffebee', borderRadius: 8,
-          border: '1px solid #ef9a9a', color: '#c62828', fontSize: 13
+          marginTop: 16, padding: '12px 16px',
+          background: '#fef2f2', borderRadius: 10,
+          border: '1px solid #fecaca', color: '#991b1b', fontSize: 13,
+          display: 'flex', alignItems: 'center', gap: 10
         }}>
-          ⚠️ {error}
-          {!scannerOnline && (
-            <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
-              Make sure FastAPI is running: <code>uvicorn app:app --port 8000 --reload</code>
-            </div>
-          )}
-          {scannerOnline && !esp32Online && (
-            <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
-              Make sure ESP32-CAM is powered and on the same WiFi hotspot.
-            </div>
-          )}
+          <span>⚠️</span>
+          <div>{error}</div>
         </div>
       )}
 
-      {/* Result */}
+      {/* Captured Result Card */}
       {result && (
         <div style={{
-          marginTop: 14, padding: '14px 16px',
-          background: '#e8f5e9', borderRadius: 10,
-          border: '1px solid #a5d6a7'
+          marginTop: 20,
+          background: '#ffffff',
+          border: '2px solid #168f91',
+          borderRadius: 14,
+          padding: '22px 24px',
+          boxShadow: '0 6px 20px rgba(22, 143, 145, 0.08)'
         }}>
-          <div style={{ fontSize: 11, color: '#388e3c', fontWeight: 600, marginBottom: 4 }}>
-            ✅ READING CAPTURED
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.8px',
+              textTransform: 'uppercase', color: '#168f91'
+            }}>
+              ✓ Validated Reading
+            </div>
+            {result.confidence && (
+              <div style={{
+                fontSize: 12, fontWeight: 600, color: '#2e9d68',
+                background: '#edf8f3', padding: '3px 10px', borderRadius: 12
+              }}>
+                {Math.round(result.confidence * 100)}% Confidence
+              </div>
+            )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span style={{ fontSize: 38, fontWeight: 800, color: '#1b5e20' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 44, fontWeight: 800, color: '#18394b', letterSpacing: '-0.5px' }}>
               {result.value ?? '—'}
             </span>
-            <span style={{ fontSize: 16, color: '#388e3c', fontWeight: 600 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: '#168f91' }}>
               {result.unit || 'mg/dL'}
             </span>
-          </div>
-
-          <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
-            <strong>Type:</strong>{' '}
-            {(result.type || 'blood_glucose').replace(/_/g, ' ')}
+            <span style={{ fontSize: 14, color: '#70818a', marginLeft: 8 }}>
+              ({(result.type || 'blood_glucose').replace(/_/g, ' ')})
+            </span>
           </div>
 
           {result.device && (
-            <div style={{ fontSize: 12, color: '#555' }}>
-              <strong>Device:</strong> {result.device}
-            </div>
-          )}
-
-          {result.confidence != null && (
-            <div style={{ fontSize: 12, color: '#555' }}>
-              <strong>AI Confidence:</strong>{' '}
-              {Math.round(result.confidence * 100)}%
+            <div style={{ fontSize: 13, color: '#536a73', marginTop: 4 }}>
+              Device: <strong>{result.device}</strong>
             </div>
           )}
 
           {result.is_memory && (
             <div style={{
-              marginTop: 6, fontSize: 12, color: '#e65100',
-              background: '#fff3e0', padding: '4px 8px', borderRadius: 6
+              marginTop: 10, fontSize: 12, color: '#b45309',
+              background: '#fef3c7', padding: '6px 12px', borderRadius: 8,
+              display: 'inline-block'
             }}>
-              ⚠️ Memory recall reading — not a live test result
+              ⚠️ Memory recall reading detected from meter
             </div>
           )}
 
           {result.clinical_notes && (
-            <div style={{ fontSize: 11, color: '#777', marginTop: 6, fontStyle: 'italic' }}>
+            <div style={{ fontSize: 12, color: '#74858d', marginTop: 8, fontStyle: 'italic' }}>
               {result.clinical_notes}
             </div>
           )}
-
-          <button
-            onClick={() => { setResult(null); setError(null); }}
-            style={{
-              marginTop: 10, padding: '5px 14px',
-              borderRadius: 6, border: '1px solid #a5d6a7',
-              background: 'transparent', color: '#2e7d32',
-              cursor: 'pointer', fontSize: 12
-            }}
-          >
-            Scan Again
-          </button>
         </div>
       )}
 
-      {/* Spinner keyframe — injected once */}
+      {/* Animation Style */}
       <style>{`
         @keyframes vs-spin {
           to { transform: rotate(360deg); }
