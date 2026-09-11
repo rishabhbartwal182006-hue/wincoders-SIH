@@ -304,14 +304,15 @@ router.get('/sessions', async (req, res) => {
 /**
  * GET /api/events/session/:sessionId/audit
  */
-router.get('/session/:sessionId/audit', async (req, res) => {
+router.get(['/session/:sessionId/audit', '/sessions/:sessionId/audit'], async (req, res) => {
   try {
     const { sessionId } = req.params;
     let logs = [];
     if (isMongoConnected()) {
-      logs = await AuditLog.find({ intakeId: sessionId }).sort({ timestamp: -1 });
+      logs = await AuditLog.find({ $or: [{ intakeId: sessionId }, { sessionId }] }).sort({ timestamp: -1 });
     } else {
-      logs = await memoryStore.find('AuditLog', { intakeId: sessionId });
+      logs = await memoryStore.find('AuditLog', { $or: [{ intakeId: sessionId }, { sessionId }] });
+      logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
 
     const auditTrail = logs.map(l => ({
@@ -675,6 +676,7 @@ router.post('/patient/:id/override-altitude', async (req, res) => {
       logId: `AUDIT-OVERRIDE-${Date.now()}`,
       action: 'ALTITUDE_INTERPRETATION_OVERRIDDEN',
       intakeId: record.intakeId,
+      sessionId: record.sessionId || record.session_id || record.intakeId,
       abhaId: record.abhaId,
       performedBy: req.body.doctorName || 'ATTENDING_PHYSICIAN',
       userId: req.body.hprId || req.body.doctorId || 'DOC-01',

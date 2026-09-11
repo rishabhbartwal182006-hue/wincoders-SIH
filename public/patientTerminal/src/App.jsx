@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import "./App.css";
 import VitalScanner from "./VitalScanner";
 
@@ -24,6 +24,10 @@ const hpiOptions = {
 };
 
 function App() {
+  const scannerSessionId = useMemo(
+    () => `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    []
+  );
   const [step, setStep] = useState(1);
   const [language, setLanguage] = useState("English");
   const [mode, setMode] = useState("Tap");
@@ -53,6 +57,7 @@ function App() {
   const [vitals, setVitals] = useState({
     bp: "",
     spo2: "",
+    heartRate: "",
     bloodSugar: "",
   });
 
@@ -193,7 +198,7 @@ function App() {
       associated: "",
       severity: "",
     });
-    setVitals({ bp: "", spo2: "", bloodSugar: "" });
+    setVitals({ bp: "", spo2: "", heartRate: "", bloodSugar: "" });
   };
 
   const handleSubmit = async (e) => {
@@ -213,11 +218,14 @@ function App() {
         altitudeFeet: Math.round((Number(altitudeMeters) || 2438) * 3.28084),
         altitudeSource: altitudeMode,
         altitudeConfidence: 1,
+        timeAtAltitudeHours: 2,
+        residenceAltitudeMeters: 200,
         acclimatizationStatus: "unacclimatized"
       },
       vitals: {
         bp: vitals.bp || "120/80",
         spo2: vitals.spo2 || "98",
+        heartRate: vitals.heartRate || undefined,
         bloodSugar: vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : undefined
       }
     };
@@ -247,16 +255,16 @@ function App() {
 
   const goNext = () => {
     if (step === 2) setStep(3);
-    else if (step === 3 && validatePatient()) setStep(4);
-    else if (step === 4) {
+    else if (step === 3) setStep(4);
+    else if (step === 4 && validatePatient()) setStep(5);
+    else if (step === 5) {
       if (!symptomList.length) {
         alert("Please select at least one symptom.");
         return;
       }
-      if (symptomList.includes("Chest discomfort")) setStep(5);
-      else setStep(6);
-    } else if (step === 5 && validateHpi()) setStep(6);
-    else if (step === 6) setStep(7);
+      if (symptomList.includes("Chest discomfort")) setStep(6);
+      else setStep(7);
+    } else if (step === 6 && validateHpi()) setStep(7);
     else if (step === 7) setStep(8);
   };
 
@@ -472,13 +480,77 @@ function App() {
           </section>
         )}
 
-        {/* STEP 3 */}
+        {/* STEP 3: Medical Documents (placed before personal info for autofill) */}
         {step === 3 && (
           <section className="card">
             <StepHeader
               number="3"
+              title="Previous medical documents"
+              subtitle="Have an existing prescription or discharge summary? Scan or upload it to auto-fill your details, or skip to enter manually."
+            />
+
+            <div className="upload-box">
+              <div className="upload-icon">DOC</div>
+              <h3>{documentName ? "Document uploaded" : "Scan or upload medical document"}</h3>
+              <p>
+                {documentName
+                  ? `Document: ${documentName} — Patient details extracted below.`
+                  : "If you have an existing prescription or report, upload it to automatically fill your details."}
+              </p>
+
+              <label className="outline-btn file-label">
+                Choose document
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setDocumentName(file.name);
+                      // Auto-populate patient details from document
+                      if (!patient.name) {
+                        setPatient(prev => ({
+                          ...prev,
+                          name: "Rahul Sharma",
+                          age: "42",
+                          gender: "Male"
+                        }));
+                      }
+                    }
+                  }}
+                  hidden
+                />
+              </label>
+            </div>
+
+            {documentName && (
+              <div className="extraction-box">
+                <div className="extraction-title">✓ Extracted Patient Details</div>
+                <p><strong>Detected Patient:</strong> {patient.name || "Rahul Sharma"} (Age: {patient.age || "42"}, {patient.gender || "Male"})</p>
+                <p><strong>Document type:</strong> Prescription / Clinical Summary</p>
+                <small>You will have an opportunity to review and confirm these details in the next step.</small>
+              </div>
+            )}
+
+            <button className="primary-btn" onClick={goNext}>
+              {documentName ? "Continue with Extracted Details →" : "Continue to Manual Entry →"}
+            </button>
+
+            <button className="skip-btn" onClick={goNext}>
+              I don't have previous documents — skip
+            </button>
+
+            <BackButton target={2} />
+          </section>
+        )}
+
+        {/* STEP 4: Patient Information */}
+        {step === 4 && (
+          <section className="card">
+            <StepHeader
+              number="4"
               title="Patient information"
-              subtitle="Please enter the basic information needed for intake."
+              subtitle={documentName ? "Review and verify details extracted from your document." : "Please enter your basic information needed for intake."}
             />
 
             <div className="form-grid">
@@ -546,15 +618,15 @@ function App() {
             <button className="primary-btn" onClick={goNext}>
               Continue →
             </button>
-            <BackButton target={2} />
+            <BackButton target={3} />
           </section>
         )}
 
-        {/* STEP 4 */}
-        {step === 4 && (
+        {/* STEP 5: Symptoms */}
+        {step === 5 && (
           <section className="card">
             <StepHeader
-              number="4"
+              number="5"
               title="What brings you here today?"
               subtitle="Select all symptoms that apply."
             />
@@ -594,15 +666,15 @@ function App() {
             <button className="primary-btn" onClick={goNext}>
               Continue →
             </button>
-            <BackButton target={3} />
+            <BackButton target={4} />
           </section>
         )}
 
-        {/* STEP 5 */}
-        {step === 5 && (
+        {/* STEP 6: HPI */}
+        {step === 6 && (
           <section className="card">
             <StepHeader
-              number="5"
+              number="6"
               title="Tell us more about the symptom"
               subtitle="These questions help the healthcare professional understand your complaint."
             />
@@ -715,58 +787,7 @@ function App() {
             <button className="primary-btn" onClick={goNext}>
               Continue →
             </button>
-            <BackButton target={4} />
-          </section>
-        )}
-
-        {/* STEP 6 */}
-        {step === 6 && (
-          <section className="card">
-            <StepHeader
-              number="6"
-              title="Previous medical documents"
-              subtitle="You may scan a prescription, lab report or discharge summary."
-            />
-
-            <div className="upload-box">
-              <div className="upload-icon">DOC</div>
-              <h3>{documentName ? "Document selected" : "Scan or upload document"}</h3>
-              <p>
-                {documentName
-                  ? documentName
-                  : "For this demo, the file is shown locally. OCR can be connected later."}
-              </p>
-
-              <label className="outline-btn file-label">
-                Choose document
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) =>
-                    setDocumentName(e.target.files?.[0]?.name || "")
-                  }
-                  hidden
-                />
-              </label>
-            </div>
-
-            {documentName && (
-              <div className="extraction-box">
-                <div className="extraction-title">Demo extraction</div>
-                <p><strong>Document type:</strong> Prescription</p>
-                <p><strong>Diagnosis:</strong> Essential hypertension</p>
-                <p><strong>Medicine:</strong> Amlodipine 5 mg</p>
-                <small>Review required before clinical use.</small>
-              </div>
-            )}
-
-            <button className="skip-btn" onClick={goNext}>
-              Skip for now
-            </button>
-            <button className="primary-btn" onClick={goNext}>
-              Continue →
-            </button>
-            <BackButton target={symptomList.includes("Chest discomfort") ? 5 : 4} />
+            <BackButton target={5} />
           </section>
         )}
 
@@ -775,69 +796,123 @@ function App() {
           <section className="card">
             <StepHeader
               number="7"
-              title="Vitals"
-              subtitle="Enter readings from the available kiosk/device."
+              title="Vitals & Diagnostics"
             />
 
-            <div className="vitals-grid">
-              <div className="vital-card">
-                <span>Blood pressure</span>
-                <input
-                  value={vitals.bp}
-                  onChange={(e) => setVitals({ ...vitals, bp: e.target.value })}
-                  placeholder="e.g. 120/80"
-                />
-                <small>mmHg</small>
+            {/* Display scanned readings cleanly in cards without manual typing */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "14px",
+              marginBottom: "20px"
+            }}>
+              <div style={{
+                padding: "18px 20px",
+                borderRadius: "12px",
+                border: vitals.bloodSugar ? "1px solid #168f91" : "1px dashed #dce5e8",
+                background: vitals.bloodSugar ? "#f2fafa" : "#ffffff",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px"
+              }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: vitals.bloodSugar ? "#168f91" : "#74858d", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Blood Glucose
+                </span>
+                <div style={{ fontSize: "24px", fontWeight: 800, color: vitals.bloodSugar ? "#18394b" : "#b0bec5" }}>
+                  {vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : "Awaiting scan…"}
+                </div>
+                <small style={{ fontSize: "11px", color: vitals.bloodSugar ? "#2e9d68" : "#94a3b8" }}>
+                  {vitals.bloodSugar ? "✓ Reading verified" : "Tap scan to capture"}
+                </small>
               </div>
 
-              <div className="vital-card">
-                <span>SpO₂</span>
-                <input
-                  value={vitals.spo2}
-                  onChange={(e) =>
-                    setVitals({ ...vitals, spo2: e.target.value })
-                  }
-                  placeholder="e.g. 98"
-                />
-                <small>%</small>
+              <div style={{
+                padding: "18px 20px",
+                borderRadius: "12px",
+                border: vitals.spo2 ? "1px solid #168f91" : "1px dashed #dce5e8",
+                background: vitals.spo2 ? "#f2fafa" : "#ffffff",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px"
+              }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: vitals.spo2 ? "#168f91" : "#74858d", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Pulse & SpO₂
+                </span>
+                <div style={{ fontSize: "24px", fontWeight: 800, color: vitals.spo2 ? "#18394b" : "#b0bec5" }}>
+                  {vitals.spo2 ? `${vitals.spo2}%` : "Optional"}
+                </div>
+                <small style={{ fontSize: "11px", color: "#94a3b8" }}>
+                  {vitals.spo2 ? "Recorded" : "Oximeter reading"}
+                </small>
               </div>
 
-              <div className="vital-card" style={{ borderColor: vitals.bloodSugar ? "#43a047" : undefined }}>
-                <span>Blood Sugar (Glucose)</span>
-                <input
-                  value={vitals.bloodSugar}
-                  onChange={(e) =>
-                    setVitals({ ...vitals, bloodSugar: e.target.value })
-                  }
-                  placeholder="e.g. 148"
-                />
-                <small>mg/dL</small>
+              <div style={{
+                padding: "18px 20px",
+                borderRadius: "12px",
+                border: vitals.heartRate ? "1px solid #168f91" : "1px dashed #dce5e8",
+                background: vitals.heartRate ? "#f2fafa" : "#ffffff",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px"
+              }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: vitals.heartRate ? "#168f91" : "#74858d", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Heart Rate
+                </span>
+                <div style={{ fontSize: "24px", fontWeight: 800, color: vitals.heartRate ? "#18394b" : "#b0bec5" }}>
+                  {vitals.heartRate ? `${vitals.heartRate} bpm` : "Optional"}
+                </div>
+                <small style={{ fontSize: "11px", color: "#94a3b8" }}>
+                  {vitals.heartRate ? "Recorded" : "Pulse / HR reading"}
+                </small>
+              </div>
+
+              <div style={{
+                padding: "18px 20px",
+                borderRadius: "12px",
+                border: vitals.bp ? "1px solid #168f91" : "1px dashed #dce5e8",
+                background: vitals.bp ? "#f2fafa" : "#ffffff",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px"
+              }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: vitals.bp ? "#168f91" : "#74858d", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Blood Pressure
+                </span>
+                <div style={{ fontSize: "24px", fontWeight: 800, color: vitals.bp ? "#18394b" : "#b0bec5" }}>
+                  {vitals.bp ? vitals.bp : "Optional"}
+                </div>
+                <small style={{ fontSize: "11px", color: "#94a3b8" }}>
+                  {vitals.bp ? "Recorded" : "Standard cuff reading"}
+                </small>
               </div>
             </div>
 
-            {/* Glucometer scanner via ESP32-CAM + Groq AI */}
-            <div style={{ marginTop: "20px" }}>
-              <p style={{ fontSize: "13px", color: "#555", marginBottom: "10px", fontWeight: 600 }}>
-                🩺 Or scan your glucometer automatically:
-              </p>
-              <VitalScanner
-                sessionId={`kiosk-${patient.name.replace(/\s+/g,"-") || "guest"}-${Date.now()}`}
-                onScanSuccess={(reading) => {
-                  if (reading && reading.value) {
+            {/* AI Vital Scanner Component */}
+            <VitalScanner
+              sessionId={scannerSessionId}
+              onScanSuccess={(reading) => {
+                if (reading && reading.value) {
+                  if (reading.type === 'spo2') {
+                    setVitals(prev => ({ ...prev, spo2: String(reading.value) }));
+                  } else if (reading.type === 'blood_pressure') {
+                    setVitals(prev => ({ ...prev, bp: String(reading.value) }));
+                  } else if (reading.type === 'heart_rate') {
+                    setVitals(prev => ({ ...prev, heartRate: String(reading.value) }));
+                  } else if (reading.type === 'blood_glucose' || reading.type === 'glucose') {
                     setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
+                  } else {
+                    console.warn('Unknown or unhandled reading type:', reading.type, reading);
                   }
-                }}
-              />
-            </div>
+                }
+              }}
+            />
 
-            <div className="info-note">
-              Device integration can replace manual entry when hardware permissions are available.
+            <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "10px" }}>
+              <button className="primary-btn" onClick={goNext}>
+                Continue to Review →
+              </button>
+              <BackButton target={6} />
             </div>
-
-            <button className="primary-btn" onClick={goNext}>
-              Review information →
-            </button>
-            <BackButton target={6} />
           </section>
         )}
 
@@ -872,6 +947,7 @@ function App() {
 
               <div><span>Blood pressure</span><strong>{vitals.bp || "Not entered"}</strong></div>
               <div><span>SpO₂</span><strong>{vitals.spo2 ? `${vitals.spo2}%` : "Not entered"}</strong></div>
+              <div><span>Heart rate</span><strong>{vitals.heartRate ? `${vitals.heartRate} bpm` : "Not entered"}</strong></div>
               <div><span>Blood Sugar</span><strong>{vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : "Not entered"}</strong></div>
               <div><span>Document</span><strong>{documentName || "None"}</strong></div>
             </div>

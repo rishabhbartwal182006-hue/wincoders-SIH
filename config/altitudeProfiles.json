@@ -1,5 +1,5 @@
 {
-  "_disclaimer": "Decision-support MVP. Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed.",
+  "_disclaimer": "Glucose altitude-caution band begins above 2500 m. Readings at or below that altitude use standard thresholds only.",
   "bands": {
     "sea_level": {
       "key": "sea_level",

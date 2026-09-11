@@ -1493,7 +1493,13 @@
 
     // HR evaluation
     const hrNum = parseFloat(vitals.hr);
-    let hrInterp = `Compensatory tachycardia evaluated against altitude baseline (${60 + hrDelta[0]}-${100 + hrDelta[1]} bpm).`;
+    const hrBandMin = 60 + hrDelta[0];
+    const hrBandMax = 100 + hrDelta[1];
+    let hrInterp = `Heart rate within compensatory baseline for altitude (${hrBandMin}–${hrBandMax} bpm).`;
+    if (!isNaN(hrNum) && hrNum > hrBandMax) {
+      hrInterp = "Heart rate above compensatory baseline for altitude — evaluate for altitude-related stress.";
+    }
+    const hasHrDeltaApplied = altMeters >= 500 && (hrDelta[0] > 0 || hrDelta[1] > 0);
 
     return `
       <div class="altitude-disclaimer-banner" style="background: #fff8e1; border: 1px solid #ffe082; color: #795548; padding: 8px 14px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
@@ -1558,9 +1564,9 @@
         <div class="vital-detail-card" style="background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; border-top: 3px solid #7b1fa2;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <strong style="font-size: 13px; color: #37474f;">Heart Rate (HR)</strong>
-            <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #f3e5f5; color: #6a1b9a; font-weight: bold;">
-              ALTITUDE DELTA
-            </span>
+            ${hasHrDeltaApplied ? '<span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #f3e5f5; color: #6a1b9a; font-weight: bold;">ALTITUDE DELTA</span>' : ''}
+
+
           </div>
           <div style="font-size: 18px; font-weight: 700; color: #263238; margin-bottom: 4px;">
             ${escapeHtml(String(vitals.hr || '—'))} <span style="font-size: 11px; color: #78909c; font-weight: normal;">bpm [RAW]</span>
