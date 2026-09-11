@@ -382,7 +382,7 @@ function App() {
             color: "#ffffff",
             border: "none",
             borderRadius: "20px",
-            padding: "8px 16px",
+            padding: "8px 18px",
             fontSize: "13px",
             fontWeight: 700,
             display: "inline-flex",
@@ -394,7 +394,11 @@ function App() {
           }}
           title="Ask NOVA Voice Assistant for help on this step"
         >
-          <span style={{ fontSize: "16px" }}>🤖</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" x2="12" y1="19" y2="22"/>
+          </svg>
           <span>Ask NOVA Help</span>
         </button>
 
@@ -516,7 +520,13 @@ function App() {
                   background: mode === "Nova" ? "#f2fafa" : "#ffffff"
                 }}
               >
-                <span className="mode-icon" style={{ background: "#e0f2f1", color: "#00796b" }}>AI</span>
+                <span className="mode-icon" style={{ background: "#e0f2f1", color: "#00796b", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" x2="12" y1="19" y2="22"/>
+                  </svg>
+                </span>
                 <div>
                   <strong>NOVA Assistant</strong>
                   <p>{language === "हिन्दी" ? "AI से बोलकर जांच कराएं" : "Speak with virtual health assistant"}</p>
@@ -1289,11 +1299,25 @@ function App() {
               alignItems: "center",
               justifyContent: "space-between"
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "20px" }}>🤖</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "rgba(255, 255, 255, 0.2)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" x2="12" y1="19" y2="22"/>
+                  </svg>
+                </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>NOVA — AI Health Assistant</h3>
-                  <p style={{ margin: 0, fontSize: "12px", opacity: 0.9 }}>Talk naturally in Hindi or English • Real-time patient sync</p>
+                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>NOVA — Health Assistant</h3>
+                  <p style={{ margin: 0, fontSize: "12px", opacity: 0.9 }}>Natural Voice Intake • Real-time patient sync</p>
                 </div>
               </div>
               <div style={{ display: "flex", gap: "10px" }}>
@@ -1391,7 +1415,11 @@ function App() {
           }}
           title={`Need help with Step ${step}? Ask NOVA`}
         >
-          <span style={{ fontSize: "20px" }}>🤖</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" x2="12" y1="19" y2="22"/>
+          </svg>
           <span>Ask NOVA for Help</span>
         </button>
       )}
