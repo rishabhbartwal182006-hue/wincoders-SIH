@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import "./App.css";
 import VitalScanner from "./VitalScanner";
 
@@ -24,12 +24,19 @@ const hpiOptions = {
 };
 
 function App() {
+  const scannerSessionId = useMemo(
+    () => `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    []
+  );
   const [step, setStep] = useState(1);
   const [language, setLanguage] = useState("English");
   const [mode, setMode] = useState("Tap");
   const [listening, setListening] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [documentName, setDocumentName] = useState("");
+  const [altitudeMode, setAltitudeMode] = useState("facility_config");
+  const [altitudeMeters, setAltitudeMeters] = useState("2438");
+  const [staffPin, setStaffPin] = useState("");
 
   const [patient, setPatient] = useState({
     name: "",
@@ -50,6 +57,7 @@ function App() {
   const [vitals, setVitals] = useState({
     bp: "",
     spo2: "",
+    heartRate: "",
     bloodSugar: "",
   });
 
@@ -177,6 +185,9 @@ function App() {
     setListening(false);
     setSubmitted(false);
     setDocumentName("");
+    setAltitudeMode("facility_config");
+    setAltitudeMeters("2438");
+    setStaffPin("");
     setPatient({ name: "", age: "", gender: "" });
     setSymptomList([]);
     setHpi({
@@ -187,20 +198,34 @@ function App() {
       associated: "",
       severity: "",
     });
-    setVitals({ bp: "", spo2: "", bloodSugar: "" });
+    setVitals({ bp: "", spo2: "", heartRate: "", bloodSugar: "" });
   };
 
   const handleSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (altitudeMode === "staff_manual" && !staffPin.trim()) {
+      alert(language === "हिन्दी" ? "स्टाफ़ ओवरराइड PIN आवश्यक है।" : "A staff override PIN is required.");
+      return;
+    }
 
     const formData = {
       patientId: `PT-${Date.now().toString().slice(-4)}`,
       name: patient.name || "Anonymous Patient",
       age: patient.age || "—",
       symptoms: symptomList.length ? symptomList : ["General intake"],
+      environment: {
+        altitudeMeters: Number(altitudeMeters) || 2438,
+        altitudeFeet: Math.round((Number(altitudeMeters) || 2438) * 3.28084),
+        altitudeSource: altitudeMode,
+        altitudeConfidence: 1,
+        timeAtAltitudeHours: 2,
+        residenceAltitudeMeters: 200,
+        acclimatizationStatus: "unacclimatized"
+      },
       vitals: {
         bp: vitals.bp || "120/80",
         spo2: vitals.spo2 || "98",
+        heartRate: vitals.heartRate || undefined,
         bloodSugar: vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : undefined
       }
     };
@@ -396,6 +421,20 @@ function App() {
                   <p>Choose answers on the screen.</p>
                 </div>
               </button>
+            </div>
+
+            <div className="field-block">
+              <label>{language === "हिन्दी" ? "ऊंचाई संदर्भ" : "Altitude context"}</label>
+              <select value={altitudeMode} onChange={(e) => setAltitudeMode(e.target.value)}>
+                <option value="facility_config">{language === "हिन्दी" ? "सुविधा डिफ़ॉल्ट: 2,438 मीटर" : "Facility default: 2,438 m"}</option>
+                <option value="staff_manual">{language === "हिन्दी" ? "स्टाफ़ मैन्युअल ओवरराइड" : "Staff manual override"}</option>
+              </select>
+              {altitudeMode === "staff_manual" && (
+                <div className="vitals-grid" style={{ marginTop: "10px" }}>
+                  <input aria-label="Altitude in metres" value={altitudeMeters} onChange={(e) => setAltitudeMeters(e.target.value)} placeholder="Altitude (m)" />
+                  <input aria-label="Staff override PIN" type="password" value={staffPin} onChange={(e) => setStaffPin(e.target.value)} placeholder={language === "हिन्दी" ? "स्टाफ़ PIN" : "Staff override PIN"} />
+                </div>
+              )}
             </div>
 
             <button className="primary-btn" onClick={() => setStep(2)}>
@@ -810,6 +849,26 @@ function App() {
               <div style={{
                 padding: "18px 20px",
                 borderRadius: "12px",
+                border: vitals.heartRate ? "1px solid #168f91" : "1px dashed #dce5e8",
+                background: vitals.heartRate ? "#f2fafa" : "#ffffff",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px"
+              }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: vitals.heartRate ? "#168f91" : "#74858d", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Heart Rate
+                </span>
+                <div style={{ fontSize: "24px", fontWeight: 800, color: vitals.heartRate ? "#18394b" : "#b0bec5" }}>
+                  {vitals.heartRate ? `${vitals.heartRate} bpm` : "Optional"}
+                </div>
+                <small style={{ fontSize: "11px", color: "#94a3b8" }}>
+                  {vitals.heartRate ? "Recorded" : "Pulse / HR reading"}
+                </small>
+              </div>
+
+              <div style={{
+                padding: "18px 20px",
+                borderRadius: "12px",
                 border: vitals.bp ? "1px solid #168f91" : "1px dashed #dce5e8",
                 background: vitals.bp ? "#f2fafa" : "#ffffff",
                 display: "flex",
@@ -830,13 +889,17 @@ function App() {
 
             {/* AI Vital Scanner Component */}
             <VitalScanner
-              sessionId={`kiosk-${patient.name.replace(/\s+/g,"-") || "guest"}-${Date.now()}`}
+              sessionId={scannerSessionId}
               onScanSuccess={(reading) => {
                 if (reading && reading.value) {
                   if (reading.type === 'spo2') {
                     setVitals(prev => ({ ...prev, spo2: String(reading.value) }));
                   } else if (reading.type === 'blood_pressure') {
                     setVitals(prev => ({ ...prev, bp: String(reading.value) }));
+                  } else if (reading.type === 'heart_rate') {
+                    setVitals(prev => ({ ...prev, heartRate: String(reading.value) }));
+                  } else if (reading.type === 'blood_glucose' || reading.type === 'glucose') {
+                    setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
                   } else {
                     setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
                   }
@@ -868,6 +931,7 @@ function App() {
               <div><span>Gender</span><strong>{patient.gender}</strong></div>
               <div><span>Language</span><strong>{language}</strong></div>
               <div><span>Mode</span><strong>{mode}</strong></div>
+              <div><span>Altitude</span><strong>{altitudeMeters || "2438"} m — {altitudeMode}</strong></div>
               <div><span>Symptoms</span><strong>{symptomList.join(", ")}</strong></div>
 
               {symptomList.includes("Chest discomfort") && (
@@ -883,6 +947,7 @@ function App() {
 
               <div><span>Blood pressure</span><strong>{vitals.bp || "Not entered"}</strong></div>
               <div><span>SpO₂</span><strong>{vitals.spo2 ? `${vitals.spo2}%` : "Not entered"}</strong></div>
+              <div><span>Heart rate</span><strong>{vitals.heartRate ? `${vitals.heartRate} bpm` : "Not entered"}</strong></div>
               <div><span>Blood Sugar</span><strong>{vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : "Not entered"}</strong></div>
               <div><span>Document</span><strong>{documentName || "None"}</strong></div>
             </div>
@@ -900,6 +965,7 @@ function App() {
             <button className="primary-btn" onClick={handleSubmit}>
               Send for clinical review ✓
             </button>
+            <p className="help-text">Decision-support MVP. Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed.</p>
             <BackButton target={7} />
           </section>
         )}

@@ -77,7 +77,7 @@ let patientQueue = [];
 
 // POST /api/patient/submit
 app.post('/api/patient/submit', (req, res) => {
-  const { patientId, name, age, symptoms, vitals } = req.body || {};
+  const { patientId, name, age, symptoms, vitals, environment } = req.body || {};
 
   const generatedId = patientId || `PT-${Date.now().toString().slice(-4)}`;
   const newPatient = {
@@ -85,6 +85,7 @@ app.post('/api/patient/submit', (req, res) => {
     name: name || "Anonymous Patient",
     age: age || "—",
     symptoms: Array.isArray(symptoms) ? symptoms : symptoms ? [symptoms] : [],
+    environment: environment || { altitudeMeters: 2438, altitudeSource: 'facility_config' },
     vitals: vitals || {},
     timestamp: new Date().toISOString(),
     status: "waiting"
@@ -100,6 +101,7 @@ app.post('/api/patient/submit', (req, res) => {
       sessionId: newPatient.patientId,
       patientId: newPatient.patientId,
       patientName: newPatient.name,
+      altitude: newPatient.environment?.altitudeMeters || 2438,
       triageLevel: 'ROUTINE',
       status: 'waiting',
       timestamp: newPatient.timestamp

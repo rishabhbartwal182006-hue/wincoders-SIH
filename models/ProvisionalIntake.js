@@ -21,7 +21,22 @@ const ProvenanceMetaSchema = new mongoose.Schema({
 const VitalValueSchema = new mongoose.Schema({
   value: { type: mongoose.Schema.Types.Mixed, required: true },
   unit: { type: String, required: true },
-  provenanceMeta: ProvenanceMetaSchema
+  provenanceMeta: ProvenanceMetaSchema,
+  altitudeContext: {
+    type: new mongoose.Schema({
+      altitudeMeters: Number,
+      expectedRange: [Number],
+      status: {
+        type: String,
+        enum: ['normal', 'borderline', 'critical', 'below-expected', 'above-expected', 'caution']
+      },
+      reason: String,
+      adjustedForAltitude: { type: Boolean, default: false },
+      algorithmVersion: { type: String, default: 'altitude-mvp-v1' },
+      cautionNote: { type: String, default: null }
+    }, { _id: false }),
+    default: null
+  }
 }, { _id: false });
 
 const ChiefComplaintSchema = new mongoose.Schema({
@@ -108,6 +123,19 @@ const ProvisionalIntakeSchema = new mongoose.Schema({
     phone: { type: String },
     address: { type: String },
     provenanceMeta: ProvenanceMetaSchema
+  },
+  environment: {
+    altitudeMeters: { type: Number, default: 2438 },
+    altitudeFeet: { type: Number, default: 8000 },
+    altitudeSource: { type: String, enum: ['facility_config', 'staff_manual'], default: 'facility_config' },
+    altitudeConfidence: { type: Number, min: 0, max: 1, default: 1.0 },
+    timeAtAltitudeHours: { type: Number },
+    residenceAltitudeMeters: { type: Number },
+    acclimatizationStatus: {
+      type: String,
+      enum: ['unacclimatized', 'partial', 'acclimatized', 'native'],
+      default: 'unacclimatized'
+    }
   },
   vitals: {
     bloodPressure: {

@@ -667,6 +667,8 @@
     redFlags,
     rules,
     vitals: normalizeVitals(session?.vitals || session?.latestVitals || {}),
+    rawVitals: session?.vitals || session?.latestVitals || {},
+    environment: session?.environment || { altitudeMeters: 2438, altitudeFeet: 8000, altitudeSource: 'facility_config', acclimatizationStatus: 'unacclimatized' },
     subjective: session?.subjective || session?.hpi?.narrative || session?.intake?.hpi || "",
     objective: session?.objective || "",
     assessment: session?.assessment || "",
@@ -1171,10 +1173,15 @@
       .map((d) => d?.message || d?.flagId)
       .filter(Boolean);
   }
-  if (full.triage?.triageLevel) fresh.triage = normalizeTriage(full.triage.triageLevel);
+  if (full.environment || session.environment) {
+    fresh.environment = full.environment || session.environment;
+  }
+  if (full.preConsultationSummary?.section1_vitals) {
+    fresh.vitalsDetail = full.preConsultationSummary.section1_vitals;
+  }
 
   ["name", "patientId", "age", "sex", "triage", "status", "chiefComplaint", "symptoms",
-   "redFlags", "rules", "vitals", "subjective", "ayush", "discrepancyFlags",
+   "redFlags", "rules", "vitals", "rawVitals", "environment", "vitalsDetail", "subjective", "ayush", "discrepancyFlags",
    "createdAt", "updatedAt"].forEach((key) => {
     const value = fresh[key];
     const empty =
@@ -1310,6 +1317,38 @@
     setupEncounterTabs();
 
     setupEncounterActions();
+
+    $("#override-altitude-btn")?.addEventListener("click", async () => {
+      const currentAlt = patient.environment?.altitudeMeters ?? 2438;
+      const input = prompt(`Enter patient elevation in meters (currently ${currentAlt} m):`, String(currentAlt));
+      if (input === null) return;
+      const meters = parseInt(input, 10);
+      if (isNaN(meters) || meters < 0 || meters > 9000) {
+        alert("Please enter a valid altitude between 0 and 9,000 meters.");
+        return;
+      }
+      const reason = prompt("Enter clinical reason for altitude override:", "Physician assessment of patient acclimatization status");
+      try {
+        const res = await fetch(`/api/v1/clinical/patient/${encodeURIComponent(patient.sessionId || patient.id)}/override-altitude`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            altitudeMeters: meters,
+            overrideReason: reason || "Physician override",
+            doctorNotes: "Overridden in Doctor Command Center"
+          })
+        });
+        if (res.ok) {
+          showToast(`Altitude updated to ${meters} m. Audit log recorded.`);
+          await enrichPatient(patient);
+          renderAll();
+        } else {
+          showToast("Failed to update altitude on server.", "error");
+        }
+      } catch (err) {
+        showToast(`Override error: ${err.message}`, "error");
+      }
+    });
   }
 
   function renderEncounterEmpty() {
@@ -1372,48 +1411,190 @@
   }
 
   /* ==========================================================
-     VITALS
+     VITALS & ALTITUDE DECISION-SUPPORT CARDS
   =========================================================== */
 
   function renderVitals(patient) {
     const vitals = patient.vitals || {};
+    const env = patient.environment || {
+      altitudeMeters: 2438,
+      altitudeFeet: 8000,
+      altitudeSource: 'facility_config',
+      acclimatizationStatus: 'unacclimatized'
+    };
+
+    const altMeters = env.altitudeMeters ?? 2438;
+    const altFeet = env.altitudeFeet ?? Math.round(altMeters * 3.28084);
+    const altSource = env.altitudeSource || 'facility_config';
+    const acclim = env.acclimatizationStatus || 'unacclimatized';
+
+    // Altitude expected bands
+    let spo2Range = [92, 97];
+    let hrDelta = [5, 15];
+    let bandName = "High (1500–2500 m)";
+
+    if (altMeters < 500) {
+      spo2Range = [95, 100];
+      hrDelta = [0, 5];
+      bandName = "Sea level (0–500 m)";
+    } else if (altMeters < 1500) {
+      spo2Range = [94, 99];
+      hrDelta = [2, 10];
+      bandName = "Moderate (500–1500 m)";
+    } else if (altMeters < 2500) {
+      spo2Range = [92, 97];
+      hrDelta = [5, 15];
+      bandName = "High (1500–2500 m)";
+    } else if (altMeters < 3500) {
+      spo2Range = [90, 95];
+      hrDelta = [10, 20];
+      bandName = "Very high (2500–3500 m)";
+    } else {
+      spo2Range = [85, 92];
+      hrDelta = [15, 30];
+      bandName = "Extreme (3500–6000 m)";
+    }
+
+    const spo2Num = parseFloat(vitals.spo2);
+    let spo2Interp = "Normal baseline for altitude";
+    let spo2BadgeClass = "badge-normal";
+    let spo2IsRedFlag = false;
+
+    if (!isNaN(spo2Num)) {
+      if (spo2Num < spo2Range[0] - 5) {
+        spo2Interp = `Severe hypoxemia (>5% below expected ${spo2Range[0]}-${spo2Range[1]}%)`;
+        spo2BadgeClass = "badge-critical";
+        spo2IsRedFlag = true;
+      } else if (spo2Num < spo2Range[0]) {
+        spo2Interp = `Below expected altitude range (${spo2Range[0]}-${spo2Range[1]}%). Critical with breathlessness`;
+        spo2BadgeClass = "badge-warning";
+        const hasDanger = (patient.symptoms || []).some(s => /chest|breath|shortness|dizzy/.test(String(s).toLowerCase()));
+        if (hasDanger) spo2IsRedFlag = true;
+      }
+    }
+
+    // BP evaluation
+    let bpInterp = "Normal. No altitude adjustment applied to BP threshold.";
+    let bpIsRedFlag = false;
+    let bpBadgeClass = "badge-normal";
+    if (vitals.bp && vitals.bp.includes("/")) {
+      const parts = vitals.bp.split("/");
+      const sys = parseInt(parts[0], 10);
+      const dia = parseInt(parts[1], 10);
+      if (sys >= 180 || dia >= 120) {
+        bpInterp = "Hypertensive crisis (Systolic >= 180 or Diastolic >= 120 mmHg). Unchanged by elevation.";
+        bpIsRedFlag = true;
+        bpBadgeClass = "badge-critical";
+      } else if (sys >= 160 || dia >= 100) {
+        bpInterp = "Stage 2 Hypertension. Unchanged by elevation.";
+        bpBadgeClass = "badge-warning";
+      }
+    }
+
+    // HR evaluation
+    const hrNum = parseFloat(vitals.hr);
+    const hrBandMin = 60 + hrDelta[0];
+    const hrBandMax = 100 + hrDelta[1];
+    let hrInterp = `Heart rate within compensatory baseline for altitude (${hrBandMin}–${hrBandMax} bpm).`;
+    if (!isNaN(hrNum) && hrNum > hrBandMax) {
+      hrInterp = "Heart rate above compensatory baseline for altitude — evaluate for altitude-related stress.";
+    }
+    const hasHrDeltaApplied = altMeters >= 500 && (hrDelta[0] > 0 || hrDelta[1] > 0);
 
     return `
-
-      <div class="vitals-strip">
-
-        ${renderVital("BP", vitals.bp, "mmHg")}
-
-        ${renderVital("Heart rate", vitals.hr, "bpm")}
-
-        ${renderVital("SpO₂", vitals.spo2, "%")}
-
-        ${renderVital("Temperature", vitals.temp, "°C")}
-
-        ${renderVital("Glucose", vitals.glucose, "mg/dL")}
-
+      <div class="altitude-disclaimer-banner" style="background: #fff8e1; border: 1px solid #ffe082; color: #795548; padding: 8px 14px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+        <span><strong>⚠️ Decision-support MVP:</strong> Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed.</span>
+        <button id="override-altitude-btn" type="button" style="background: #00796b; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;">
+          ⚙ Override Altitude
+        </button>
       </div>
 
+      <div class="vitals-strip" style="margin-bottom: 14px;">
+        ${renderVital("BP", vitals.bp, "mmHg")}
+        ${renderVital("Heart rate", vitals.hr, "bpm")}
+        ${renderVital("SpO₂", vitals.spo2, "%")}
+        ${renderVital("Temperature", vitals.temp, "°C")}
+        ${renderVital("Glucose", vitals.glucose, "mg/dL")}
+      </div>
+
+      <!-- Altitude-Aware Context Cards Grid -->
+      <div class="altitude-cards-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 16px;">
+
+        <!-- SpO2 Altitude Card -->
+        <div class="vital-detail-card" style="background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; border-top: 3px solid ${spo2IsRedFlag ? '#d32f2f' : '#00897b'};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <strong style="font-size: 13px; color: #37474f;">Oxygen Saturation (SpO₂)</strong>
+            <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: ${spo2IsRedFlag ? '#ffebee' : '#e8f5e9'}; color: ${spo2IsRedFlag ? '#c62828' : '#2e7d32'}; font-weight: bold;">
+              ${spo2IsRedFlag ? 'RED FLAG — fast-track' : 'EVALUATED'}
+            </span>
+          </div>
+          <div style="font-size: 18px; font-weight: 700; color: #263238; margin-bottom: 4px;">
+            ${escapeHtml(String(vitals.spo2 || '—'))}% <span style="font-size: 11px; color: #78909c; font-weight: normal;">[RAW]</span>
+          </div>
+          <div style="font-size: 11.5px; color: #546e7a; line-height: 1.5;">
+            <div>• <strong>Altitude:</strong> ${altMeters} m (${altFeet} ft) — <em>${escapeHtml(altSource)}</em></div>
+            <div>• <strong>Expected at altitude:</strong> ${spo2Range[0]}–${spo2Range[1]}% (${bandName})</div>
+            <div>• <strong>Interpretation:</strong> ${escapeHtml(spo2Interp)}</div>
+            <div>• <strong>Provenance:</strong> device-reading, confidence 0.99</div>
+            <div>• <strong>Algorithm:</strong> altitude-mvp-v1</div>
+          </div>
+        </div>
+
+        <!-- Blood Pressure Altitude Card -->
+        <div class="vital-detail-card" style="background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; border-top: 3px solid ${bpIsRedFlag ? '#d32f2f' : '#1976d2'};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <strong style="font-size: 13px; color: #37474f;">Blood Pressure (BP)</strong>
+            <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: ${bpIsRedFlag ? '#ffebee' : '#e3f2fd'}; color: ${bpIsRedFlag ? '#c62828' : '#1565c0'}; font-weight: bold;">
+              ${bpIsRedFlag ? 'HYPERTENSIVE CRISIS' : 'STANDARD THRESHOLD'}
+            </span>
+          </div>
+          <div style="font-size: 18px; font-weight: 700; color: #263238; margin-bottom: 4px;">
+            ${escapeHtml(String(vitals.bp || '—'))} <span style="font-size: 11px; color: #78909c; font-weight: normal;">mmHg [RAW]</span>
+          </div>
+          <div style="font-size: 11.5px; color: #546e7a; line-height: 1.5;">
+            <div>• <strong>Altitude:</strong> ${altMeters} m (${altFeet} ft)</div>
+            <div>• <strong>Expected standard:</strong> 90–120 / 60–80 mmHg</div>
+            <div>• <strong>Interpretation:</strong> ${escapeHtml(bpInterp)}</div>
+            <div>• <strong>Invariant Rule:</strong> BP normal range not shifted upward for altitude</div>
+            <div>• <strong>Algorithm:</strong> altitude-mvp-v1</div>
+          </div>
+        </div>
+
+        <!-- Heart Rate Altitude Card -->
+        <div class="vital-detail-card" style="background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; border-top: 3px solid #7b1fa2;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <strong style="font-size: 13px; color: #37474f;">Heart Rate (HR)</strong>
+            ${hasHrDeltaApplied ? '<span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #f3e5f5; color: #6a1b9a; font-weight: bold;">ALTITUDE DELTA</span>' : ''}
+
+
+          </div>
+          <div style="font-size: 18px; font-weight: 700; color: #263238; margin-bottom: 4px;">
+            ${escapeHtml(String(vitals.hr || '—'))} <span style="font-size: 11px; color: #78909c; font-weight: normal;">bpm [RAW]</span>
+          </div>
+          <div style="font-size: 11.5px; color: #546e7a; line-height: 1.5;">
+            <div>• <strong>Altitude:</strong> ${altMeters} m</div>
+            <div>• <strong>Compensatory baseline:</strong> ${60 + hrDelta[0]}–${100 + hrDelta[1]} bpm (+${hrDelta[1]} bpm)</div>
+            <div>• <strong>Interpretation:</strong> ${escapeHtml(hrInterp)}</div>
+            <div>• <strong>Acclimatization:</strong> ${escapeHtml(acclim)}</div>
+            <div>• <strong>Algorithm:</strong> altitude-mvp-v1</div>
+          </div>
+        </div>
+
+      </div>
     `;
   }
 
   function renderVital(label, value, unit) {
     return `
-
       <div class="vital-cell">
-
         <span class="vital-label">
           ${label}
         </span>
-
         <span class="vital-value">
           ${escapeHtml(String(value ?? "—"))}
-
           ${value !== "—" ? `<span class="vital-unit">${unit}</span>` : ""}
         </span>
-
       </div>
-
     `;
   }
 

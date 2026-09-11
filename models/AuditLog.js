@@ -16,10 +16,16 @@ const AuditLogSchema = new mongoose.Schema({
       'HPR_AUTH_FAILED',
       'WRITE_LOCK_COMMITTED',
       'FHIR_BUNDLE_GENERATED',
-      'ABDM_HIE_CM_PUSHED'
+      'ABDM_HIE_CM_PUSHED',
+      'ALTITUDE_CONTEXT_APPLIED',
+      'ALTITUDE_RED_FLAG_TRIGGERED',
+      'ALTITUDE_INTERPRETATION_OVERRIDDEN'
     ]
   },
   intakeId: {
+    type: String
+  },
+  sessionId: {
     type: String
   },
   abhaId: {
@@ -30,7 +36,19 @@ const AuditLogSchema = new mongoose.Schema({
     required: true,
     default: 'SYSTEM_KIOSK'
   },
+  userId: {
+    type: String
+  },
   hprId: {
+    type: String
+  },
+  altitudeMeters: {
+    type: Number
+  },
+  altitudeSource: {
+    type: String
+  },
+  algorithmVersion: {
     type: String
   },
   ipAddress: {

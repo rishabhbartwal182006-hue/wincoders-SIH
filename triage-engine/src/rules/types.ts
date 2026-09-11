@@ -7,7 +7,7 @@
  * 3. Human-readable explainable reason and recommended clinical action.
  */
 
-export type RuleCategory = 'respiratory' | 'cardiac' | 'neurological' | 'vitals' | 'general';
+export type RuleCategory = 'respiratory' | 'cardiac' | 'neurological' | 'vitals' | 'general' | 'environment';
 
 export type RulePriority = 'EMERGENCY' | 'URGENT';
 

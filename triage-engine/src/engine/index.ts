@@ -4,6 +4,7 @@ import { applyEventToSession, SessionState, updateSessionTriage } from './sessio
 import { evaluateAllRules } from './evaluateRules.js';
 import { calculateTriage } from './calculateTriage.js';
 import { ALL_RULES } from '../rules/index.js';
+import { evaluateAltitudeRules } from '../rules/environment/altitudeRules.js';
 
 export * from './sessionState.js';
 export * from './evaluateRules.js';
@@ -42,7 +43,7 @@ export function processPatientEvent(rawEvent: unknown): TriageResult {
 
   const validEvent = validation.data;
   const updatedSession = applyEventToSession(validEvent);
-  const triggeredRules = evaluateAllRules(updatedSession, ALL_RULES);
+  const triggeredRules = [...evaluateAllRules(updatedSession, ALL_RULES), ...evaluateAltitudeRules(updatedSession.vitals, undefined, updatedSession.symptoms.list)];
   const triageResult = calculateTriage(validEvent.sessionId, triggeredRules, updatedSession);
 
   updateSessionTriage(validEvent.sessionId, triageResult);
@@ -66,7 +67,7 @@ export function processPatientEventSafe(rawEvent: unknown): ProcessEventSafeResu
 
     const validEvent = validation.data;
     const session = applyEventToSession(validEvent);
-    const triggeredRules = evaluateAllRules(session, ALL_RULES);
+    const triggeredRules = [...evaluateAllRules(session, ALL_RULES), ...evaluateAltitudeRules(session.vitals, undefined, session.symptoms.list)];
     const result = calculateTriage(validEvent.sessionId, triggeredRules, session);
 
     updateSessionTriage(validEvent.sessionId, result);
