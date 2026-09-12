@@ -93,7 +93,7 @@ export default function VitalScanner({ sessionId, onScanSuccess }) {
     }
   };
 
-  const canScan = scannerOnline && esp32Online && !scanning;
+  const canScan = !scanning;
 
   return (
     <div style={{

@@ -1346,7 +1346,7 @@ function App() {
 
             {/* Embedded Standalone Nova Assistant App */}
             <iframe
-              src={`http://localhost:3000?step=${step}`}
+              src={`http://localhost:3000?step=${step}&session_id=${scannerSessionId}`}
               title="NOVA Virtual Health Assistant"
               style={{
                 flex: 1,
