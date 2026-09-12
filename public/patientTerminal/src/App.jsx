@@ -69,11 +69,23 @@ function App() {
       const data = event.data;
       if (!data || data.source !== "nova-health-assistant") return;
 
+      // ── go-to-report: navigate to report screen (always, even if payload empty) ──
+      if (data.type === "go-to-report") {
+        // Merge vitals from payload if present
+        const v = data.payload?.vitals;
+        if (v) {
+          const sugar = v.blood_glucose_mg_dl ?? v.blood_glucose ?? v.bloodSugar;
+          if (sugar) setVitals((prev) => ({ ...prev, bloodSugar: String(sugar) }));
+        }
+        setShowNovaModal(false);
+        setStep(8);
+        return;
+      }
+
       if (
         data.type === "patient-data" ||
         data.type === "session-ended" ||
-        data.type === "urgent" ||
-        data.type === "go-to-report"
+        data.type === "urgent"
       ) {
         const record = data.payload;
         if (!record) return;
@@ -127,12 +139,6 @@ function App() {
             spo2: spo2Val ? String(spo2Val) : prev.spo2,
             heartRate: hrVal ? String(hrVal) : prev.heartRate,
           }));
-        }
-
-        // Open final report page ONLY when user explicitly pressed the button / go-to-report sent
-        if (data.type === "go-to-report") {
-          setShowNovaModal(false);
-          setStep(8);
         }
       }
     };
