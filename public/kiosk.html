@@ -194,6 +194,99 @@
       </div>
     </section>
 
+    <!-- Document OCR Section -->
+<section class="card-section">
+
+  <div class="card-title">
+    <span>4. Medical Document OCR</span>
+    <span
+      id="ocrStatus"
+      style="font-size: 11px; color: #2563eb; font-weight: 700;"
+    >
+      [NO DOCUMENT UPLOADED]
+    </span>
+  </div>
+
+  <div class="form-group">
+
+    <label for="ocrDocument">
+      Upload Prescription / Lab Report
+    </label>
+
+    <input
+      type="file"
+      id="ocrDocument"
+      accept=".jpg,.jpeg,.png,.webp"
+    />
+
+    <button
+      type="button"
+      class="btn-action"
+      id="btnUploadOCR"
+      style="margin-top: 10px;"
+    >
+      Scan Document with OCR
+    </button>
+
+  </div>
+
+  <div
+    id="ocrLoading"
+    style="display: none; margin-top: 10px;"
+  >
+    Processing document... Please wait.
+  </div>
+
+  <div
+    id="ocrResult"
+    style="
+      display: none;
+      margin-top: 15px;
+      padding: 15px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+    "
+  >
+
+    <h4>OCR Result</h4>
+
+    <p>
+      <strong>Document Type:</strong>
+      <span id="ocrDocumentType">—</span>
+    </p>
+
+    <p>
+      <strong>Patient Name:</strong>
+      <span id="ocrPatientName">—</span>
+    </p>
+
+    <p>
+      <strong>Age:</strong>
+      <span id="ocrAge">—</span>
+    </p>
+
+    <p>
+      <strong>Gender:</strong>
+      <span id="ocrGender">—</span>
+    </p>
+
+    <p>
+      <strong>Date:</strong>
+      <span id="ocrDate">—</span>
+    </p>
+
+    <p>
+      <strong>OCR Confidence:</strong>
+      <span id="ocrConfidence">—</span>
+    </p>
+
+    <div id="ocrMedicationsContainer">
+    </div>
+
+  </div>
+
+</section>
+
     <!-- Submission -->
     <button type="button" class="submit-btn" id="btnSubmitIntake">Submit Self-Service Intake Payload</button>
   </div>
@@ -202,3 +295,4 @@
   <script src="/kiosk.js"></script>
 </body>
 </html>
+

@@ -14,6 +14,7 @@ const hprRoutes = require('./routes/hprRoutes');
 const sessionRoutes = require('./routes/sessionRoutes');
 const vitalsRoutes  = require('./routes/vitalsRoutes');
 const hprAuthMiddleware = require('./middleware/hprAuth');
+const ocrRoutes = require('./routes/ocrRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -62,7 +63,7 @@ app.use('/api/v1', sessionRoutes);
 
 // Vital Scanner — ESP32-CAM + Groq AI glucometer reading
 app.use('/api/v1/vitals', vitalsRoutes);
-
+app.use('/api/v1/ocr', ocrRoutes);
 // Compatibility Base Routes for Frontend Event APIs (/api/events/...)
 app.use('/api/events', kioskRoutes);
 app.use('/api/events', clinicalRoutes);
