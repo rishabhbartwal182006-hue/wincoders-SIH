@@ -1306,18 +1306,26 @@ function App() {
             <VitalScanner
               sessionId={scannerSessionId}
               onScanSuccess={(reading) => {
-                if (reading && reading.value) {
-                  if (reading.type === 'spo2') {
-                    setVitals(prev => ({ ...prev, spo2: String(reading.value) }));
-                  } else if (reading.type === 'blood_pressure') {
-                    setVitals(prev => ({ ...prev, bp: String(reading.value) }));
-                  } else if (reading.type === 'heart_rate') {
-                    setVitals(prev => ({ ...prev, heartRate: String(reading.value) }));
-                  } else if (reading.type === 'blood_glucose' || reading.type === 'glucose') {
-                    setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
-                  } else {
-                    setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
-                  }
+                if (!reading) return;
+                const rType = String(reading.type || '').toLowerCase();
+                if (rType.includes('spo2') || rType.includes('oximeter')) {
+                  const spVal = reading.spo2 ?? reading.value;
+                  if (spVal) setVitals(prev => ({ ...prev, spo2: String(spVal) }));
+                  const pulse = reading.pulse || reading.heart_rate;
+                  if (pulse) setVitals(prev => ({ ...prev, heartRate: String(pulse) }));
+                } else if (rType.includes('bp') || rType.includes('blood_pressure') || reading.systolic) {
+                  const bpStr = (reading.systolic && reading.diastolic)
+                    ? `${reading.systolic}/${reading.diastolic}`
+                    : String(reading.value || '');
+                  if (bpStr) setVitals(prev => ({ ...prev, bp: bpStr }));
+                  const pulse = reading.pulse || reading.heart_rate;
+                  if (pulse) setVitals(prev => ({ ...prev, heartRate: String(pulse) }));
+                } else if (rType.includes('heart_rate') || rType.includes('pulse')) {
+                  if (reading.value) setVitals(prev => ({ ...prev, heartRate: String(reading.value) }));
+                } else if (rType.includes('glucose') || rType.includes('sugar') || rType.includes('blood_glucose')) {
+                  if (reading.value) setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
+                } else if (reading.value) {
+                  setVitals(prev => ({ ...prev, bloodSugar: String(reading.value) }));
                 }
               }}
             />

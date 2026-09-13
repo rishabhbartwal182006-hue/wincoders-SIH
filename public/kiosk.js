@@ -107,44 +107,128 @@ const ocrDocuments = [];
   $('btnSaveSpO2')?.addEventListener('click', syncSpO2Inputs);
   $('btnSaveGlucose')?.addEventListener('click', syncGlucoseInput);
 
+  function showKioskToast(msg, isError = false) {
+    let toast = document.getElementById('kioskToastNotification');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'kioskToastNotification';
+      toast.style.position = 'fixed';
+      toast.style.bottom = '24px';
+      toast.style.right = '24px';
+      toast.style.zIndex = '99999';
+      toast.style.padding = '12px 20px';
+      toast.style.borderRadius = '8px';
+      toast.style.fontSize = '14px';
+      toast.style.fontWeight = '600';
+      toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+      toast.style.transition = 'all 0.3s ease';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.background = isError ? '#fef2f2' : '#f0fdf4';
+    toast.style.color = isError ? '#991b1b' : '#166534';
+    toast.style.border = `1px solid ${isError ? '#fca5a5' : '#86efac'}`;
+    toast.style.display = 'block';
+    toast.style.opacity = '1';
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => { toast.style.display = 'none'; }, 300);
+    }, 4000);
+  }
+
   // Hardware Scanner Trigger (Calls FastAPI/ESP32 via Backend)
   async function triggerHardwareVitalScan(expectedType) {
     const activeSessionId = $('kioskSessionId')?.value || `KIOSK-${Date.now()}`;
     try {
+      showKioskToast(`Reading measurement from hardware scanner (${expectedType.replace(/_/g, ' ')})...`);
       const resp = await fetch('/api/v1/vitals/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: activeSessionId })
+        body: JSON.stringify({
+          session_id: activeSessionId,
+          expected_type: expectedType,
+          vital_type: expectedType
+        })
       });
       const data = await resp.json();
       if (!resp.ok || !data.success) {
         throw new Error(data.error || 'Hardware scanner communication failed.');
       }
-      const reading = data.reading;
-      if (reading.type === 'spo2') {
-        vitalsState.spo2 = Number(reading.value);
-        vitalsState.provenance.spo2 = 'device-captured';
-        $('dispSpO2').textContent = `${reading.value}%`;
-        const badge = $('srcSpO2');
-        if (badge) badge.textContent = 'device-captured';
-      } else if (reading.type === 'blood_pressure') {
-        const parts = String(reading.value).split('/');
-        vitalsState.systolic = Number(parts[0]) || null;
-        vitalsState.diastolic = Number(parts[1]) || null;
-        vitalsState.provenance.bp = 'device-captured';
-        $('dispBP').textContent = `${reading.value}`;
-        const badge = $('srcBP');
-        if (badge) badge.textContent = 'device-captured';
+      const reading = data.reading || {};
+      const rType = String(reading.type || expectedType || '').toLowerCase();
+
+      if (rType.includes('spo2') || rType.includes('oximeter')) {
+        const val = Number(reading.spo2 ?? reading.value);
+        if (!isNaN(val) && val > 0) {
+          vitalsState.spo2 = val;
+          vitalsState.provenance.spo2 = 'device-captured';
+          if ($('dispSpO2')) $('dispSpO2').textContent = `${val}%`;
+          if ($('inSpO2')) $('inSpO2').value = val;
+          const badge = $('srcSpO2');
+          if (badge) badge.textContent = 'device-captured';
+        }
+        const pulse = Number(reading.pulse || reading.heart_rate);
+        if (!isNaN(pulse) && pulse > 0) {
+          vitalsState.heartRate = pulse;
+          if ($('dispHR')) $('dispHR').textContent = `${pulse}`;
+          if ($('inHR')) $('inHR').value = pulse;
+        }
+      } else if (rType.includes('bp') || rType.includes('blood_pressure')) {
+        let sys = reading.systolic ? Number(reading.systolic) : null;
+        let dia = reading.diastolic ? Number(reading.diastolic) : null;
+        if (!sys || !dia) {
+          const parts = String(reading.value || '').split('/');
+          sys = Number(parts[0]) || null;
+          dia = Number(parts[1]) || null;
+        }
+        if (sys && dia) {
+          vitalsState.systolic = sys;
+          vitalsState.diastolic = dia;
+          vitalsState.provenance.bp = 'device-captured';
+          if ($('dispBP')) $('dispBP').textContent = `${sys} / ${dia}`;
+          if ($('inSys')) $('inSys').value = sys;
+          if ($('inDia')) $('inDia').value = dia;
+          const badge = $('srcBP');
+          if (badge) badge.textContent = 'device-captured';
+        }
+        const pulse = Number(reading.pulse || reading.heart_rate);
+        if (!isNaN(pulse) && pulse > 0) {
+          vitalsState.heartRate = pulse;
+          if ($('dispHR')) $('dispHR').textContent = `${pulse}`;
+          if ($('inHR')) $('inHR').value = pulse;
+        }
+      } else if (rType.includes('heart_rate') || rType.includes('pulse')) {
+        const hr = Number(reading.value);
+        if (!isNaN(hr) && hr > 0) {
+          vitalsState.heartRate = hr;
+          if ($('dispHR')) $('dispHR').textContent = `${hr}`;
+          if ($('inHR')) $('inHR').value = hr;
+        }
+      } else if (rType.includes('glucose') || rType.includes('sugar')) {
+        const glu = parseFloat(reading.value);
+        if (!isNaN(glu) && glu > 0) {
+          vitalsState.bloodGlucose = glu;
+          vitalsState.provenance.glucose = 'device-captured';
+          if ($('dispGlucose')) $('dispGlucose').textContent = `${glu}`;
+          if ($('inGlucose')) $('inGlucose').value = glu;
+          const badge = $('srcGlucose');
+          if (badge) badge.textContent = 'device-captured';
+        }
       } else {
-        vitalsState.bloodGlucose = Number(reading.value);
-        vitalsState.provenance.glucose = 'device-captured';
-        $('dispGlucose').textContent = `${reading.value}`;
-        const badge = $('srcGlucose');
-        if (badge) badge.textContent = 'device-captured';
+        const num = parseFloat(reading.value);
+        if (!isNaN(num)) {
+          vitalsState.bloodGlucose = num;
+          vitalsState.provenance.glucose = 'device-captured';
+          if ($('dispGlucose')) $('dispGlucose').textContent = `${num}`;
+          if ($('inGlucose')) $('inGlucose').value = num;
+        }
       }
-      alert(`[Hardware Sensor]: Captured ${reading.type} reading: ${reading.value} ${reading.unit || ''}`);
+
+      updateVitalsModeBadge();
+      showKioskToast(`✓ Captured ${reading.type || expectedType}: ${reading.value} ${reading.unit || ''}`);
     } catch (err) {
-      alert(`Hardware Scanner: ${err.message}\nPlease enter measurement manually if device is offline.`);
+      showKioskToast(`Scanner offline: ${err.message}. Please enter measurement manually.`, true);
     }
   }
 

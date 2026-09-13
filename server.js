@@ -7,6 +7,8 @@ const morgan = require('morgan');
 const { Server } = require('socket.io');
 const { connectDB, isMongoConnected, memoryStore } = require('./config/db');
 const ProvisionalIntake = require('./models/ProvisionalIntake');
+const Session = require('./models/Session');
+const specAdapter = require('./services/specAdapter');
 
 // Import Routes & Handlers
 const kioskRoutes = require('./routes/kioskRoutes');
@@ -230,10 +232,29 @@ app.get('/api/doctor/queue', async (req, res) => {
       dbRecords = await memoryStore.find('ProvisionalIntake');
     }
 
+    // Also integrate spec Session records
+    try {
+      let sessionRecords = [];
+      if (isMongoConnected()) {
+        sessionRecords = await Session.find().sort({ updated_at: -1 });
+      } else {
+        sessionRecords = await memoryStore.find('Session');
+      }
+      for (const sess of sessionRecords) {
+        const sessId = sess.session_id;
+        if (sessId && !dbRecords.some(r => r.intakeId === sessId || r.abhaId === sessId)) {
+          const adapted = specAdapter.sessionToInternalIntake(sess);
+          dbRecords.push(adapted);
+        }
+      }
+    } catch (_) {}
+
     const existingIds = new Set(patientQueue.map(p => p.patientId || p.sessionId || p.id));
     for (const rec of dbRecords) {
       const id = rec.intakeId || rec.abhaId;
-      if (id && !existingIds.has(id)) {
+      if (!id) continue;
+
+      if (!existingIds.has(id)) {
         patientQueue.push({
           patientId: id,
           sessionId: rec.intakeId || id,
@@ -252,6 +273,18 @@ app.get('/api/doctor/queue', async (req, res) => {
           timestamp: rec.createdAt || new Date().toISOString()
         });
         existingIds.add(id);
+      } else {
+        // Update existing queue entry with latest vitals from DB
+        const existing = patientQueue.find(p => (p.patientId === id || p.sessionId === id));
+        if (existing && rec.vitals) {
+          existing.vitals = { ...existing.vitals, ...rec.vitals };
+          if (rec.triage?.triageLevel) {
+            existing.triageLevel = rec.triage.triageLevel;
+            existing.triage = rec.triage.triageLevel;
+          }
+          if (rec.altitudeContext) existing.altitudeContext = rec.altitudeContext;
+          if (rec.redFlags && rec.redFlags.length > 0) existing.redFlags = rec.redFlags;
+        }
       }
     }
   } catch (err) {

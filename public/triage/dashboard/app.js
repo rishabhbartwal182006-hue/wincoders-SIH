@@ -749,7 +749,25 @@
   =========================================================== */
 
   function normalizeVitals(vitals) {
-  const v = vitals || {};
+  let v = vitals || {};
+
+  if (Array.isArray(v)) {
+    const mapped = {};
+    for (const item of v) {
+      if (!item) continue;
+      const t = String(item.type || item.vital_type || '').toLowerCase();
+      const val = item.value;
+      if (t === 'bp_systolic' || t === 'systolic') mapped.systolic = val;
+      else if (t === 'bp_diastolic' || t === 'diastolic') mapped.diastolic = val;
+      else if (t === 'blood_pressure' || t === 'bp') mapped.bp = val;
+      else if (t === 'spo2') mapped.spo2 = val;
+      else if (t === 'heart_rate' || t === 'pulse') mapped.hr = val;
+      else if (t === 'blood_glucose' || t === 'glucose' || t === 'sugar') mapped.glucose = val;
+      else if (t === 'temperature' || t === 'temp') mapped.temp = val;
+      else if (t) mapped[t] = val;
+    }
+    v = mapped;
+  }
 
   const byType = (type) => {
     const key = Object.keys(v).find((k) => k.toUpperCase() === type);

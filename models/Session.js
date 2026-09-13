@@ -57,14 +57,14 @@ const IntakeSchema = new mongoose.Schema({
 const VitalReadingSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['bp_systolic', 'bp_diastolic', 'spo2', 'blood_glucose', 'heart_rate', 'temperature', 'weight', 'height', 'respiratory_rate'],
+    enum: ['bp_systolic', 'bp_diastolic', 'blood_pressure', 'spo2', 'blood_glucose', 'heart_rate', 'pulse', 'temperature', 'weight', 'height', 'respiratory_rate'],
     required: true
   },
-  value: { type: Number, required: true },
+  value: { type: mongoose.Schema.Types.Mixed, required: true },
   unit: { type: String, required: true },
   source: {
     type: String,
-    enum: ['staff_manual_entry', 'patient_reported', 'device'],
+    enum: ['staff_manual_entry', 'patient_reported', 'device', 'device_reading', 'device-captured', 'manual-entry', 'manual_entry', 'staff_entered'],
     required: true
   },
   device_id: { type: String, default: null },
@@ -149,8 +149,8 @@ const RedFlagSchema = new mongoose.Schema({
 const SessionSchema = new mongoose.Schema({
   schema_version: { type: String, default: '1.0.0' },
   session_id: { type: String, required: true, unique: true, index: true },
-  kiosk_id: { type: String, required: true },
-  facility_id: { type: String, required: true },
+  kiosk_id: { type: String, required: true, default: 'KIOSK-01' },
+  facility_id: { type: String, required: true, default: 'FACILITY-01' },
   status: {
     type: String,
     enum: ['draft', 'in_progress', 'red_flagged', 'staff_verified', 'physician_reviewed', 'synced_to_abdm', 'abandoned'],

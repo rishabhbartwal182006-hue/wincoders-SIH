@@ -58,20 +58,52 @@ function buildInternalVitals(vitalsArray = []) {
     ...(reading.altitudeContext ? { altitudeContext: reading.altitudeContext } : {})
   };
 
-  const latest = (type) => [...vitalsArray].reverse().find(v => v.type === type);
+  const latest = (type) => [...vitalsArray].reverse().find(v => v.type === type || v.vital_type === type);
 
-  const systolic = latest('bp_systolic');
-  const diastolic = latest('bp_diastolic');
+  let systolic = latest('bp_systolic');
+  let diastolic = latest('bp_diastolic');
+  const bpComposite = latest('blood_pressure') || latest('bp');
+
+  if ((!systolic || !diastolic) && bpComposite) {
+    const rawVal = bpComposite.value;
+    if (typeof rawVal === 'string' && rawVal.includes('/')) {
+      const [sysPart, diaPart] = rawVal.split('/');
+      if (!systolic) {
+        systolic = { ...bpComposite, value: Number(sysPart.replace(/[^\d.]/g, '')), unit: 'mmHg' };
+      }
+      if (!diastolic) {
+        diastolic = { ...bpComposite, value: Number(diaPart.replace(/[^\d.]/g, '')), unit: 'mmHg' };
+      }
+    } else if (typeof rawVal === 'object' && rawVal !== null) {
+      if (!systolic && rawVal.systolic != null) {
+        systolic = { ...bpComposite, value: Number(rawVal.systolic), unit: 'mmHg' };
+      }
+      if (!diastolic && rawVal.diastolic != null) {
+        diastolic = { ...bpComposite, value: Number(rawVal.diastolic), unit: 'mmHg' };
+      }
+    }
+  }
+
+  const bpVal = (systolic && diastolic) ? `${systolic.value}/${diastolic.value}` : undefined;
+  const hrReading = latest('heart_rate') || latest('pulse');
+  const gluReading = latest('blood_glucose') || latest('glucose');
 
   return {
     bloodPressure: (systolic || diastolic) ? {
       systolic: wrap(systolic),
       diastolic: wrap(diastolic)
     } : undefined,
+    bp: bpVal,
+    systolic: systolic ? systolic.value : undefined,
+    diastolic: diastolic ? diastolic.value : undefined,
     spo2: wrap(latest('spo2')),
-    heartRate: wrap(latest('heart_rate')),
+    heartRate: wrap(hrReading),
+    hr: hrReading ? hrReading.value : undefined,
     temperature: wrap(latest('temperature')),
-    bloodGlucose: wrap(latest('blood_glucose'))
+    temp: latest('temperature') ? latest('temperature').value : undefined,
+    bloodGlucose: wrap(gluReading),
+    glucose: gluReading ? gluReading.value : undefined,
+    bloodSugar: gluReading ? `${gluReading.value} mg/dL` : undefined
   };
 }
 

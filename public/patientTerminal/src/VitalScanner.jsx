@@ -9,8 +9,9 @@
 // ============================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-
-const API_BASE = 'http://localhost:4000';
+const API_BASE = (typeof window !== 'undefined' && window.location.port === '5173')
+  ? 'http://localhost:4000'
+  : '';
 
 // ── Small badge showing online / offline ─────────────────────
 function StatusBadge({ label, online }) {
@@ -75,7 +76,11 @@ export default function VitalScanner({ sessionId, onScanSuccess }) {
       const res = await fetch(`${API_BASE}/api/v1/vitals/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId })
+        body: JSON.stringify({
+          session_id: sessionId,
+          expected_type: 'vital_signs',
+          vital_type: 'vital_signs'
+        })
       });
       const data = await res.json();
 
