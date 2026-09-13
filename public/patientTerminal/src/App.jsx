@@ -69,28 +69,9 @@ function App() {
       const data = event.data;
       if (!data || data.source !== "nova-health-assistant") return;
 
-      // ── go-to-report: navigate to report screen (always, even if payload empty) ──
-      if (data.type === "go-to-report") {
-        // Merge vitals from payload if present
-        const v = data.payload?.vitals;
-        if (v) {
-          const sugar = v.blood_glucose_mg_dl ?? v.blood_glucose ?? v.bloodSugar;
-          if (sugar) setVitals((prev) => ({ ...prev, bloodSugar: String(sugar) }));
-        }
-        setShowNovaModal(false);
-        setStep(8);
-        return;
-      }
-
-      if (
-        data.type === "patient-data" ||
-        data.type === "session-ended" ||
-        data.type === "urgent"
-      ) {
-        const record = data.payload;
-        if (!record) return;
-
-        // Auto-fill demographics
+      // Auto-fill all demographics, symptoms, and vitals whenever a payload is sent
+      const record = data.payload;
+      if (record) {
         if (record.name) {
           setPatient((prev) => ({ ...prev, name: record.name }));
         }
@@ -113,6 +94,8 @@ function App() {
             if (lower.includes("cough") || lower.includes("खांसी")) matched.push("Cough");
             if (lower.includes("stomach") || lower.includes("पेट")) matched.push("Stomach pain");
             if (lower.includes("nausea") || lower.includes("उल्टी")) matched.push("Nausea");
+            if (lower.includes("weak") || lower.includes("कमजोर") || lower.includes("थकान")) matched.push("Fatigue / Weakness");
+            if (lower.includes("dizz") || lower.includes("चक्कर")) matched.push("Dizziness");
           });
           if (matched.length > 0) {
             setSymptomList((prev) => [...new Set([...prev, ...matched])]);
@@ -140,6 +123,13 @@ function App() {
             heartRate: hrVal ? String(hrVal) : prev.heartRate,
           }));
         }
+      }
+
+      // ── go-to-report: navigate to report screen ──
+      if (data.type === "go-to-report") {
+        setShowNovaModal(false);
+        setStep(8);
+        return;
       }
     };
 
