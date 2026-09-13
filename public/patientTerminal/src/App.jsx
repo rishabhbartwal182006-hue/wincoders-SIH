@@ -35,6 +35,9 @@ function App() {
   const [listening, setListening] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [documentName, setDocumentName] = useState("");
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState("");
+  const [ocrResult, setOcrResult] = useState(null);
   const [altitudeMode, setAltitudeMode] = useState("facility_config");
   const [altitudeMeters, setAltitudeMeters] = useState("2438");
   const [staffPin, setStaffPin] = useState("");
@@ -354,6 +357,61 @@ function App() {
     }
   };
 
+  const handleDocumentUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setDocumentName(file.name);
+    setOcrLoading(true);
+    setOcrError("");
+
+    const formData = new FormData();
+    formData.append("document", file);
+
+    const ocrUrl = (window.location.hostname === 'localhost' && window.location.port === '5173')
+      ? 'http://localhost:4000/api/v1/ocr'
+      : '/api/v1/ocr';
+
+    try {
+      const response = await fetch(ocrUrl, {
+        method: "POST",
+        body: formData,
+      });
+
+      const resData = await response.json();
+
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.message || "Failed to process document with OCR.");
+      }
+
+      const ocrDoc = resData.data;
+      setOcrResult(ocrDoc);
+
+      const parsed = ocrDoc.structuredData || {};
+
+      // Auto-populate patient details dynamically from OCR if extracted
+      setPatient(prev => ({
+        ...prev,
+        name: parsed.patientName || prev.name || "",
+        age: (parsed.age !== null && parsed.age !== undefined) ? String(parsed.age) : (prev.age || ""),
+        gender: parsed.gender || prev.gender || ""
+      }));
+
+      // Auto-populate symptoms if detected from document
+      if (Array.isArray(parsed.symptoms) && parsed.symptoms.length > 0) {
+        setSymptomList(prev => {
+          const set = new Set([...prev, ...parsed.symptoms]);
+          return Array.from(set);
+        });
+      }
+    } catch (err) {
+      console.error("[OCR Upload Error]:", err);
+      setOcrError(err.message || "Could not read document. You can still enter details manually.");
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
   const goNext = () => {
     if (step === 2) setStep(3);
     else if (step === 3) setStep(4);
@@ -619,49 +677,201 @@ function App() {
               <h3>{documentName ? "Document uploaded" : "Scan or upload medical document"}</h3>
               <p>
                 {documentName
-                  ? `Document: ${documentName} — Patient details extracted below.`
-                  : "If you have an existing prescription or report, upload it to automatically fill your details."}
+                  ? `Selected: ${documentName}`
+                  : "Upload your prescription or lab report image to automatically extract and verify your details."}
               </p>
 
-              <label className="outline-btn file-label">
-                Choose document
+              <label
+                className="outline-btn file-label"
+                style={{
+                  cursor: ocrLoading ? "not-allowed" : "pointer",
+                  opacity: ocrLoading ? 0.7 : 1,
+                  display: "inline-block"
+                }}
+              >
+                {ocrLoading ? "Scanning document with OCR..." : (documentName ? "Upload Different Document" : "Choose Document Image")}
                 <input
                   type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      setDocumentName(file.name);
-                      // Auto-populate patient details from document
-                      if (!patient.name) {
-                        setPatient(prev => ({
-                          ...prev,
-                          name: "Rahul Sharma",
-                          age: "42",
-                          gender: "Male"
-                        }));
-                      }
-                    }
-                  }}
+                  accept="image/jpeg,image/png,image/webp,image/jpg"
+                  disabled={ocrLoading}
+                  onChange={handleDocumentUpload}
                   hidden
                 />
               </label>
             </div>
 
-            {documentName && (
-              <div className="extraction-box">
-                <div className="extraction-title">✓ Extracted Patient Details</div>
-                <p><strong>Detected Patient:</strong> {patient.name || "Rahul Sharma"} (Age: {patient.age || "42"}, {patient.gender || "Male"})</p>
-                <p><strong>Document type:</strong> Prescription / Clinical Summary</p>
-                <small>You will have an opportunity to review and confirm these details in the next step.</small>
+            {ocrLoading && (
+              <div style={{
+                margin: "16px 0",
+                padding: "20px",
+                background: "#f0f9ff",
+                borderRadius: "10px",
+                textAlign: "center",
+                border: "1px solid #bae6fd"
+              }}>
+                <div style={{
+                  display: "inline-block",
+                  width: "28px",
+                  height: "28px",
+                  border: "3px solid #0284c7",
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite"
+                }} />
+                <p style={{ margin: "10px 0 4px", fontWeight: 600, color: "#0369a1", fontSize: "15px" }}>
+                  Extracting medical data via Tesseract OCR...
+                </p>
+                <small style={{ color: "#64748b" }}>
+                  Reading patient demographics, clinical symptoms, and medications...
+                </small>
               </div>
             )}
 
-            <button className="primary-btn" onClick={goNext}>
+            {ocrError && (
+              <div style={{
+                margin: "16px 0",
+                padding: "14px 16px",
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "8px",
+                color: "#b91c1c",
+                fontSize: "14px"
+              }}>
+                ⚠️ <strong>OCR Notice:</strong> {ocrError}
+              </div>
+            )}
+
+            {documentName && !ocrLoading && (
+              <div className="extraction-box" style={{
+                margin: "18px 0",
+                padding: "16px 20px",
+                background: "#f8fafc",
+                border: "1px solid #cbd5e1",
+                borderRadius: "10px",
+                textAlign: "left"
+              }}>
+                <div className="extraction-title" style={{
+                  fontWeight: 700,
+                  fontSize: "15px",
+                  color: "#0f766e",
+                  marginBottom: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}>
+                  <span>✓</span> Extracted Medical Document Data
+                </div>
+
+                <p style={{ margin: "6px 0", fontSize: "14px" }}>
+                  <strong>Detected Patient:</strong>{" "}
+                  {patient.name ? (
+                    <span style={{ color: "#0f172a", fontWeight: 600 }}>{patient.name}</span>
+                  ) : (
+                    <span style={{ color: "#94a3b8", fontStyle: "italic" }}>Name not found in document</span>
+                  )}
+                  {" "}
+                  (Age: {patient.age ? patient.age : "—"}, Gender: {patient.gender ? patient.gender : "—"})
+                </p>
+
+                <p style={{ margin: "6px 0", fontSize: "14px" }}>
+                  <strong>Document Classification:</strong>{" "}
+                  <span style={{
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                    background: ocrResult?.documentType === "PRESCRIPTION" ? "#dbeafe" : ocrResult?.documentType === "LAB_REPORT" ? "#fef3c7" : "#f1f5f9",
+                    color: ocrResult?.documentType === "PRESCRIPTION" ? "#1e40af" : ocrResult?.documentType === "LAB_REPORT" ? "#92400e" : "#475569",
+                    fontSize: "12px",
+                    fontWeight: 600
+                  }}>
+                    {ocrResult?.documentType === "PRESCRIPTION" ? "Prescription" : ocrResult?.documentType === "LAB_REPORT" ? "Lab Report" : "Clinical Document"}
+                  </span>
+                  {ocrResult?.confidence > 0 && (
+                    <span style={{ marginLeft: "10px", fontSize: "12px", color: "#64748b" }}>
+                      (Confidence: {Math.round(ocrResult.confidence * 100)}%)
+                    </span>
+                  )}
+                </p>
+
+                {ocrResult?.structuredData?.doctorName && (
+                  <p style={{ margin: "6px 0", fontSize: "14px" }}>
+                    <strong>Prescribing Doctor:</strong> Dr. {ocrResult.structuredData.doctorName}
+                  </p>
+                )}
+
+                {ocrResult?.structuredData?.medications && ocrResult.structuredData.medications.length > 0 && (
+                  <p style={{ margin: "6px 0", fontSize: "14px" }}>
+                    <strong>Detected Medications:</strong>{" "}
+                    {ocrResult.structuredData.medications.map((m, idx) => (
+                      <span key={idx} style={{
+                        display: "inline-block",
+                        background: "#e0f2fe",
+                        color: "#0369a1",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        marginRight: "6px",
+                        fontSize: "12px",
+                        fontWeight: 500
+                      }}>
+                        {typeof m === "string" ? m : `${m.name} ${m.dosage || ""}`.trim()}
+                      </span>
+                    ))}
+                  </p>
+                )}
+
+                {ocrResult?.structuredData?.symptoms && ocrResult.structuredData.symptoms.length > 0 && (
+                  <p style={{ margin: "6px 0", fontSize: "14px" }}>
+                    <strong>Detected Symptoms:</strong>{" "}
+                    {ocrResult.structuredData.symptoms.map((sym, idx) => (
+                      <span key={idx} style={{
+                        display: "inline-block",
+                        background: "#fef3c7",
+                        color: "#92400e",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        marginRight: "6px",
+                        fontSize: "12px",
+                        fontWeight: 500
+                      }}>
+                        {sym}
+                      </span>
+                    ))}
+                  </p>
+                )}
+
+                {ocrResult?.extractedText && (
+                  <details style={{ marginTop: "10px", fontSize: "12px", color: "#64748b" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 600, color: "#2563eb", outline: "none" }}>
+                      View Raw OCR Extracted Text
+                    </summary>
+                    <pre style={{
+                      marginTop: "6px",
+                      padding: "10px",
+                      background: "#ffffff",
+                      borderRadius: "6px",
+                      border: "1px solid #e2e8f0",
+                      maxHeight: "120px",
+                      overflowY: "auto",
+                      whiteSpace: "pre-wrap",
+                      fontSize: "11px",
+                      fontFamily: "monospace",
+                      color: "#334155"
+                    }}>
+                      {ocrResult.extractedText}
+                    </pre>
+                  </details>
+                )}
+
+                <small style={{ display: "block", marginTop: "10px", color: "#64748b" }}>
+                  All extracted information can be reviewed or edited in the next step.
+                </small>
+              </div>
+            )}
+
+            <button className="primary-btn" onClick={goNext} disabled={ocrLoading}>
               {documentName ? "Continue with Extracted Details →" : "Continue to Manual Entry →"}
             </button>
 
-            <button className="skip-btn" onClick={goNext}>
+            <button className="skip-btn" onClick={goNext} disabled={ocrLoading}>
               I don't have previous documents — skip
             </button>
 

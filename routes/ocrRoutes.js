@@ -57,8 +57,17 @@ const upload = multer({
 
 router.post(
     "/",
-    upload.single("document"),
-
+    (req, res, next) => {
+        upload.single("document")(req, res, (err) => {
+            if (err) {
+                return res.status(400).json({
+                    success: false,
+                    message: err.message || "File upload failed. Please upload a JPG or PNG image."
+                });
+            }
+            next();
+        });
+    },
     async (req, res) => {
 
         try {

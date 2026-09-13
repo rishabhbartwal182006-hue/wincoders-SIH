@@ -107,11 +107,13 @@ function extractPatientName(text) {
 
     const patterns = [
 
-        /patient\s*name\s*[:\-]\s*(.*?)(?=\s+age\s*[:\-]?|\s+sex\s*[:\-]?|\s+gender\s*[:\-]?|\s+date\s*[:\-]?|$)/i,
+        /(?:patient\s*name|pt\s*name|patient)\s*[:\-]\s*([^\n\r]+?)(?=\s+(?:age|sex|gender|date|dob|dr\.)\b|[\r\n]|$)/i,
 
-        /patient\s*[:\-]\s*(.*?)(?=\s+age\s*[:\-]?|\s+sex\s*[:\-]?|\s+gender\s*[:\-]?|\s+date\s*[:\-]?|$)/i,
+        /\bname\s*[:\-]\s*([^\n\r]+?)(?=\s+(?:age|sex|gender|date|dob|dr\.)\b|[\r\n]|$)/i,
 
-        /name\s*[:\-]\s*(.*?)(?=\s+age\s*[:\-]?|\s+sex\s*[:\-]?|\s+gender\s*[:\-]?|\s+date\s*[:\-]?|$)/i
+        /(?:patient\s*name|pt\s*name|patient)\s*[:\-]\s*([^\n\r,;]+)/i,
+
+        /\bname\s*[:\-]\s*([^\n\r,;]+)/i
 
     ];
 
@@ -122,7 +124,11 @@ function extractPatientName(text) {
 
         if (match) {
 
-            return cleanValue(match[1]);
+            const cleaned = cleanValue(match[1]);
+
+            if (cleaned && cleaned.length >= 2 && !/^(name|patient|age|date|doctor)$/i.test(cleaned)) {
+                return cleaned;
+            }
 
         }
 
@@ -139,14 +145,19 @@ function extractPatientName(text) {
  * Age: 17
  * Age 17 Years
  * 17 Y
+ * Age/Sex: 29/F
  */
 function extractAge(text) {
 
     const patterns = [
 
+        /age\s*[\/|\\]\s*(?:sex|gender)?\s*[:\-]?\s*(\d{1,3})/i,
+
         /age\s*[:\-]?\s*(\d{1,3})\s*(?:years?|yrs?|y)?/i,
 
-        /\b(\d{1,3})\s*(?:years?|yrs?|y)\b/i
+        /\b(\d{1,3})\s*(?:years?|yrs?|y(?:\/|rs?))\b/i,
+
+        /\b(\d{1,3})\s*[\/|\\]\s*(?:male|female|m|f|other)\b/i
 
     ];
 
@@ -178,39 +189,54 @@ function extractAge(text) {
  * Examples:
  * Sex: Male
  * Gender: Female
+ * Age/Sex: 29/F
+ * 34 Yrs / Male
  */
 function extractGender(text) {
 
+    const m1 = text.match(/age\s*[\/|\\]\s*(?:sex|gender)?\s*[:\-]?\s*\d{1,3}\s*[\/|\\]\s*(male|female|m|f|other)/i);
+    if (m1) {
+        const val = m1[1].toLowerCase();
+        return (val === "m" || val === "male") ? "Male" : (val === "f" || val === "female") ? "Female" : "Other";
+    }
+
+    const m2 = text.match(/\b\d{1,3}\s*(?:years?|yrs?|y)?\s*[\/|\\]\s*(male|female|m|f|other)\b/i);
+    if (m2) {
+        const val = m2[1].toLowerCase();
+        return (val === "m" || val === "male") ? "Male" : (val === "f" || val === "female") ? "Female" : "Other";
+    }
+
     const match = text.match(
-        /(?:sex|gender)\s*[:\-]\s*(male|female|m|f|other)/i
+        /(?:sex|gender)\s*[:\-]?\s*(male|female|m|f|other)\b/i
     );
 
+    if (match) {
+        const value = match[1].toLowerCase();
 
-    if (!match) {
-        return null;
+        if (
+            value === "male" ||
+            value === "m"
+        ) {
+            return "Male";
+        }
+
+        if (
+            value === "female" ||
+            value === "f"
+        ) {
+            return "Female";
+        }
+
+        return "Other";
     }
 
-
-    const value = match[1].toLowerCase();
-
-
-    if (
-        value === "male" ||
-        value === "m"
-    ) {
-        return "Male";
+    const m4 = text.match(/\b(male|female)\b/i);
+    if (m4) {
+        const val = m4[1].toLowerCase();
+        return val === "male" ? "Male" : "Female";
     }
 
-
-    if (
-        value === "female" ||
-        value === "f"
-    ) {
-        return "Female";
-    }
-
-
-    return "Other";
+    return null;
 }
 
 
@@ -549,7 +575,10 @@ function parseDocument(text) {
             extractDoctorName(cleanedText),
 
         date:
-            extractDate(cleanedText)
+            extractDate(cleanedText),
+
+        symptoms:
+            extractSymptoms(cleanedText)
 
     };
 
@@ -585,6 +614,35 @@ function parseDocument(text) {
 
 
     return result;
+}
+
+
+/**
+ * Extract symptoms mentioned in the document.
+ */
+function extractSymptoms(text) {
+    const lower = text.toLowerCase();
+    const symptomsMap = [
+        { label: "Cold / Runny nose", keys: ["cold", "runny nose", "rhinorrhea", "coryza"] },
+        { label: "Chest discomfort", keys: ["chest pain", "chest discomfort", "angina", "chest pressure"] },
+        { label: "Breathing difficulty", keys: ["breathing difficulty", "shortness of breath", "dyspnea", "breathlessness"] },
+        { label: "Fever", keys: ["fever", "pyrexia", "high temp", "chills"] },
+        { label: "Headache", keys: ["headache", "cephalalgia", "migraine"] },
+        { label: "Cough", keys: ["cough", "dry cough", "wet cough"] },
+        { label: "Stomach pain", keys: ["stomach pain", "abdominal pain", "gastritis", "cramps"] },
+        { label: "Nausea", keys: ["nausea", "vomiting", "emesis"] }
+    ];
+
+    const detected = [];
+    for (const item of symptomsMap) {
+        for (const key of item.keys) {
+            if (lower.includes(key)) {
+                detected.push(item.label);
+                break;
+            }
+        }
+    }
+    return detected;
 }
 
 
