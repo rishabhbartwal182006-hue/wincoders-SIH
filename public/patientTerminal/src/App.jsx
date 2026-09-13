@@ -5,6 +5,7 @@ import VitalScanner from "./VitalScanner";
 const languages = ["English", "हिन्दी", "தமிழ்", "తెలుగు", "বাংলা"];
 
 const symptoms = [
+  { id: "Cold / Runny nose", label: "Cold / Runny nose" },
   { id: "Chest discomfort", label: "Chest discomfort" },
   { id: "Breathing difficulty", label: "Breathing difficulty" },
   { id: "Fever", label: "Fever" },
@@ -87,6 +88,7 @@ function App() {
           const matched = [];
           record.symptoms.forEach((sym) => {
             const lower = String(sym).toLowerCase();
+            if (lower.includes("cold") || lower.includes("जुकाम") || lower.includes("सर्दी") || lower.includes("runny nose")) matched.push("Cold / Runny nose");
             if (lower.includes("chest")) matched.push("Chest discomfort");
             if (lower.includes("breath") || lower.includes("सांस")) matched.push("Breathing difficulty");
             if (lower.includes("fever") || lower.includes("बुखार") || lower.includes("ताप")) matched.push("Fever");
@@ -137,10 +139,26 @@ function App() {
     return () => window.removeEventListener("message", handleNovaMessage);
   }, []);
 
-  const hasRedFlag =
-    symptomList.includes("Chest discomfort") &&
+  const hasCardiacRedFlag =
+    symptomList.some(s => /chest|heart|cardiac/i.test(s)) &&
     (hpi.associated === "Sweating" ||
-      hpi.associated === "Breathing difficulty");
+      hpi.associated === "Breathing difficulty" ||
+      /radiat|left\s*arm|arm|jaw/i.test(hpi.radiation || "") ||
+      symptomList.some(s => /heart\s*attack/i.test(s)));
+
+  const hasStrokeRedFlag =
+    symptomList.some(s => /stroke|facial\s*droop|paralysis|slurr|weakness|speech/i.test(s));
+
+  const hasBreathingRedFlag =
+    symptomList.some(s => /breathing\s*difficulty|suffocat|gasp|asthma/i.test(s)) &&
+    (Number(vitals.spo2) < 90 || hpi.severity === "Severe" || hpi.associated === "Breathing difficulty");
+
+  const hasSevereHyperglycemiaRedFlag =
+    Number(String(vitals.bloodSugar || '').replace(/[^\d.]/g, '')) >= 250 &&
+    (hpi.associated === "Nausea" || symptomList.some(s => /vomit|nausea/i.test(s)));
+
+  const hasRedFlag = hasCardiacRedFlag || hasStrokeRedFlag || hasBreathingRedFlag || hasSevereHyperglycemiaRedFlag ||
+    symptomList.some(s => /heart\s*attack|stroke|unconscious|seizure|bleeding/i.test(s));
 
   const updatePatient = (field, value) => {
     setPatient((current) => ({ ...current, [field]: value }));
@@ -196,6 +214,7 @@ function App() {
         const lower = text.toLowerCase();
         const found = [];
 
+        if (lower.includes("cold") || lower.includes("जुकाम") || lower.includes("सर्दी") || lower.includes("runny nose")) found.push("Cold / Runny nose");
         if (lower.includes("chest")) found.push("Chest discomfort");
         if (lower.includes("breath")) found.push("Breathing difficulty");
         if (lower.includes("fever")) found.push("Fever");
@@ -289,6 +308,12 @@ function App() {
       name: patient.name || "Anonymous Patient",
       age: patient.age || "—",
       symptoms: symptomList.length ? symptomList : ["General intake"],
+      chiefComplaint: symptomList[0] || "General intake",
+      hpi: {
+        ...hpi,
+        hasRedFlag: hasRedFlag
+      },
+      hasRedFlag: hasRedFlag,
       environment: {
         altitudeMeters: Number(altitudeMeters) || 2438,
         altitudeFeet: Math.round((Number(altitudeMeters) || 2438) * 3.28084),

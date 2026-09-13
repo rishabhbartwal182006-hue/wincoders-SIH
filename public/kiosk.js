@@ -6,13 +6,13 @@
   // OCR Documents State
 const ocrDocuments = [];
 
-  // Vitals State
+  // Vitals State - default healthy physiological baseline
   const vitalsState = {
-    systolic: 165,
-    diastolic: 102,
-    spo2: 97,
-    heartRate: 88,
-    bloodGlucose: 245
+    systolic: 120,
+    diastolic: 80,
+    spo2: 98,
+    heartRate: 72,
+    bloodGlucose: 95
   };
 
   // Clinical Mode Switcher
@@ -39,72 +39,176 @@ const ocrDocuments = [];
     allopathySec.style.display = 'none';
   });
 
+  // Manual Vitals Input Handlers
+  $('btnSaveBP')?.addEventListener('click', () => {
+    const s = parseInt($('inSys').value, 10);
+    const d = parseInt($('inDia').value, 10);
+    if (!isNaN(s) && !isNaN(d)) {
+      vitalsState.systolic = s;
+      vitalsState.diastolic = d;
+      $('dispBP').textContent = `${s} / ${d}`;
+      const badge = $('srcBP');
+      if (badge) badge.textContent = 'manual input';
+      alert(`Manual BP saved: ${s}/${d} mmHg`);
+    } else {
+      alert('Please enter valid systolic and diastolic numbers.');
+    }
+  });
+
+  $('btnSaveSpO2')?.addEventListener('click', () => {
+    const sp = parseInt($('inSpO2').value, 10);
+    const hr = parseInt($('inHR').value, 10);
+    if (!isNaN(sp)) {
+      vitalsState.spo2 = sp;
+      $('dispSpO2').textContent = `${sp}%`;
+      const badge = $('srcSpO2');
+      if (badge) badge.textContent = 'manual input';
+    }
+    if (!isNaN(hr)) {
+      vitalsState.heartRate = hr;
+      $('dispHR').textContent = `${hr}`;
+    }
+    alert(`Manual Pulse/SpO2 saved: SpO2 ${vitalsState.spo2}%, HR ${vitalsState.heartRate} bpm`);
+  });
+
+  $('btnSaveGlucose')?.addEventListener('click', () => {
+    const g = parseInt($('inGlucose').value, 10);
+    if (!isNaN(g)) {
+      vitalsState.bloodGlucose = g;
+      $('dispGlucose').textContent = `${g}`;
+      const badge = $('srcGlucose');
+      if (badge) badge.textContent = 'manual input';
+      alert(`Manual Blood Glucose saved: ${g} mg/dL`);
+    } else {
+      alert('Please enter a valid glucose number.');
+    }
+  });
+
   // Simulated Hardware Controls
-  $('btnMeasureBP').addEventListener('click', () => {
-    const sysList = [120, 135, 145, 165, 185];
-    const diaList = [80, 88, 92, 102, 112];
+  $('btnMeasureBP')?.addEventListener('click', () => {
+    const sysList = [118, 120, 125, 130, 140];
+    const diaList = [78, 80, 82, 85, 88];
     const idx = Math.floor(Math.random() * sysList.length);
     vitalsState.systolic = sysList[idx];
     vitalsState.diastolic = diaList[idx];
     $('dispBP').textContent = `${vitalsState.systolic} / ${vitalsState.diastolic}`;
+    const badge = $('srcBP');
+    if (badge) badge.textContent = 'device-captured';
     alert(`[Module 3 Hardware Sensor]: BP Cuff measurement completed -> ${vitalsState.systolic}/${vitalsState.diastolic} mmHg`);
   });
 
-  $('btnCaptureSpO2').addEventListener('click', () => {
-    const spo2List = [98, 97, 94, 88, 99];
-    const hrList = [72, 84, 88, 96, 110];
+  $('btnCaptureSpO2')?.addEventListener('click', () => {
+    const spo2List = [98, 97, 99, 96, 98];
+    const hrList = [72, 76, 80, 74, 68];
     const idx = Math.floor(Math.random() * spo2List.length);
     vitalsState.spo2 = spo2List[idx];
     vitalsState.heartRate = hrList[idx];
     $('dispSpO2').textContent = `${vitalsState.spo2}%`;
     $('dispHR').textContent = `${vitalsState.heartRate}`;
+    const badge = $('srcSpO2');
+    if (badge) badge.textContent = 'device-captured';
     alert(`[Module 3 Hardware Sensor]: Pulse Oximeter captured -> SpO₂: ${vitalsState.spo2}%, HR: ${vitalsState.heartRate} bpm`);
   });
 
-  $('btnReadGlucose').addEventListener('click', () => {
-    const glucList = [110, 145, 185, 245, 310];
+  $('btnReadGlucose')?.addEventListener('click', () => {
+    const glucList = [92, 105, 110, 115, 120];
     const idx = Math.floor(Math.random() * glucList.length);
     vitalsState.bloodGlucose = glucList[idx];
     $('dispGlucose').textContent = `${vitalsState.bloodGlucose}`;
+    const badge = $('srcGlucose');
+    if (badge) badge.textContent = 'device-captured';
     alert(`[Module 3 Hardware Sensor]: Glucometer reading captured -> ${vitalsState.bloodGlucose} mg/dL`);
   });
 
   /**
-   * Prompt 1: Dynamic Triage Threshold Evaluator
-   * Evaluates BP, SpO2, Glucose, and Severity against clinical thresholds
+   * Dynamic Multi-System Triage Evaluator
+   * Evaluates BP, SpO2, Glucose, Severity, and Chief Complaints against clinical thresholds
    */
-  function calculateClinicalTriageLevel(vitals, severity) {
+  function calculateClinicalTriageLevel(vitals, severity, complaintsText = '') {
     const sys = Number(vitals.systolic);
     const dia = Number(vitals.diastolic);
     const spo2 = Number(vitals.spo2);
     const glucose = Number(vitals.bloodGlucose);
+    const text = String(complaintsText).toLowerCase();
 
-    // EMERGENCY Thresholds: BP > 180 (or Dia > 110), SpO2 < 90%, Glucose > 300 mg/dL
-    if (sys > 180 || dia > 110 || spo2 < 90 || glucose > 300 || (severity === 'Severe' && (sys >= 160 || spo2 < 92))) {
+    // Red flag keyword checks across specialties
+    const isCardiacEmergency = /(heart\s*attack|myocardial|cardiac|chest\s*(pain|tightness|pressure)|angina)/i.test(text);
+    const isStrokeEmergency = /(stroke|facial\s*droop|arm\s*weakness|slurred\s*speech|paralysis)/i.test(text);
+    const isAirwayEmergency = /(stridor|choking|gasping|severe\s*asthma)/i.test(text);
+    const isUnconscious = /(unconscious|faint|syncope|seizure|bleeding)/i.test(text);
+
+    // Tightened Glycemic rules:
+    // DKA/HHS Crisis: glucose >= 250 with nausea/vomiting/abdominal pain/tachypnea
+    const hasDkaSymptoms = /(vomit|nausea|abdominal\s*pain|breath)/i.test(text);
+    const isDkaCrisis = glucose >= 250 && hasDkaSymptoms;
+    const isSevereHypoglycemia = glucose > 0 && glucose < 60;
+
+    // EMERGENCY Thresholds (Level 1)
+    if (
+      isCardiacEmergency ||
+      isStrokeEmergency ||
+      isAirwayEmergency ||
+      isUnconscious ||
+      isDkaCrisis ||
+      isSevereHypoglycemia ||
+      sys >= 180 ||
+      dia >= 120 ||
+      (sys > 0 && sys < 90) ||
+      (spo2 > 0 && spo2 < 90)
+    ) {
       return {
         triageLevel: 'EMERGENCY',
         urgencyScore: 10,
         action: 'IMMEDIATE_DOCTOR_ALERT',
-        reason: 'Critical physiological threshold exceeded (Stage 3 Crisis BP / Severe Hypoxemia / Hyperglycemia).'
+        reason: isCardiacEmergency
+          ? 'Acute Cardiac Red Flag Presentation (Heart Attack / ACS Suspected).'
+          : isStrokeEmergency
+          ? 'Acute Neurological Red Flag (FAST Stroke Criteria).'
+          : isDkaCrisis
+          ? 'Hyperglycemic Crisis (Suspected DKA/HHS).'
+          : isSevereHypoglycemia
+          ? 'Severe Hypoglycemia (< 60 mg/dL).'
+          : 'Critical physiological threshold exceeded (Hypertensive Crisis / Severe Hypoxemia / Shock).'
       };
     }
 
-    // URGENT Thresholds: BP > 140, SpO2 < 95%, Glucose > 200 mg/dL, or Severe symptoms
-    if (sys > 140 || dia > 90 || spo2 < 95 || glucose > 200 || severity === 'Severe') {
+    // URGENT Thresholds (Level 2)
+    const isAcuteAbdomen = /(acute\s*abdomen|appendicitis|pancreatitis|peritonitis|severe\s*abdominal\s*pain|severe\s*stomach\s*pain)/i.test(text);
+    const isGiBleed = /(vomit(ing)?\s*blood|hematemesis|black\s*stool|melena)/i.test(text);
+    const isHemoptysis = /(cough(ing)?\s*blood|hemoptysis)/i.test(text);
+    const isAms = /(mountain\s*sickness|altitude\s*sickness)/i.test(text);
+
+    const hasUrgentVitals = (sys >= 160 || dia >= 100) ||
+      (spo2 > 0 && spo2 < 94) ||
+      glucose >= 200 ||
+      (vitals.heartRate > 150 || (vitals.heartRate > 0 && vitals.heartRate < 40));
+
+    if (isAcuteAbdomen || isGiBleed || isHemoptysis || isAms || hasUrgentVitals) {
       return {
         triageLevel: 'URGENT',
         urgencyScore: 7,
         action: 'PRIORITY_REVIEW',
-        reason: 'Elevated clinical risk parameters (Stage 1/2 Hypertension / Moderate Hypoxemia / Elevated Glucose).'
+        reason: isAcuteAbdomen
+          ? 'Acute Abdomen: Severe abdominal distress requiring expedited surgical/physician review.'
+          : isGiBleed
+          ? 'Gastrointestinal Bleeding Alert: Expedited endoscopic evaluation required.'
+          : glucose >= 300
+          ? 'Isolated Severe Hyperglycemia (>= 300 mg/dL): Priority clinical evaluation and ketone check required.'
+          : hasUrgentVitals
+          ? 'Elevated physiological risk parameters (Stage 2 Hypertension / Moderate Hypoxemia / Glycemic Elevation).'
+          : 'Priority clinical review required.'
       };
     }
 
-    // ROUTINE
+    // ROUTINE (Level 3)
+    const isRoutineIllness = /(cold|common\s*cold|coryza|rhinitis|runny\s*nose|stuffy\s*nose|sneezing|cough|sore\s*throat|pharyngitis|mild\s*fever|indigestion|acidity|gas|sprain|strain|checkup|routine|consultation)/i.test(text);
     return {
       triageLevel: 'ROUTINE',
       urgencyScore: 3,
       action: 'STANDARD_QUEUE',
-      reason: 'Stable physiological vitals within normal parameters.'
+      reason: isRoutineIllness
+        ? 'Common viral or routine condition with stable vitals. Assigned to standard outpatient queue.'
+        : 'Stable physiological vitals within normal parameters. Assigned to standard queue.'
     };
   }
 
@@ -337,8 +441,9 @@ $('btnUploadOCR').addEventListener(
     const isStaff = $('staffModeToggle').checked;
     const provenanceType = isStaff ? 'touch-selected' : 'patient-spoken';
 
-    // Calculate Triage Level dynamically via Threshold Engine
-    const triageEval = calculateClinicalTriageLevel(vitalsState, severity);
+    // Calculate Triage Level dynamically via Multi-System Engine
+    const chiefComplaintText = `${$('chiefComplaint').value} ${$('hpiNarrative').value}`;
+    const triageEval = calculateClinicalTriageLevel(vitalsState, severity, chiefComplaintText);
 
     const payload = {
       intakeId: intakeId,

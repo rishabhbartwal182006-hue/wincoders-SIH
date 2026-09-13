@@ -538,6 +538,7 @@
 
     if (queue.length > 0) {
       const normalizedQueue = queue.map((item) => {
+        const itemTriage = item.triageLevel || item.triage || (item.redFlags?.length ? (item.redFlags.some(f => f.urgency_tier === 'critical') ? 'EMERGENCY' : 'URGENT') : 'ROUTINE');
         return normalizeSession({
           id: item.patientId || `PT-${Date.now()}`,
           sessionId: item.patientId || `sess_${Date.now()}`,
@@ -545,11 +546,14 @@
           name: item.name,
           age: item.age,
           sex: item.gender || item.sex || "—",
-          triage: "ROUTINE",
-          status: item.status || "waiting",
+          triage: itemTriage,
+          triageLevel: itemTriage,
+          status: item.status || (itemTriage === 'EMERGENCY' ? 'critical' : 'waiting'),
           chiefComplaint: Array.isArray(item.symptoms) ? item.symptoms.join(", ") : (item.symptoms || "General intake"),
           symptoms: Array.isArray(item.symptoms) ? item.symptoms : [item.symptoms],
           vitals: item.vitals || {},
+          redFlags: item.redFlags || [],
+          rules: (item.redFlags || []).map(r => r.reason || r.flag_type || r),
           createdAt: item.timestamp || new Date().toISOString()
         });
       });
@@ -596,7 +600,13 @@
   const triageResult =
     session?.triageResult || session?.latestTriageResult || session?.latestTriage || session?.triage || null;
 
-  const triage = normalizeTriage(triageResult?.triageLevel ?? "ROUTINE");
+  const rawTriage = typeof session?.triage === 'string'
+    ? session.triage
+    : session?.triageLevel ||
+      triageResult?.triageLevel ||
+      (session?.redFlags?.length ? (session.redFlags.some(f => f.urgency_tier === 'critical') ? 'EMERGENCY' : 'URGENT') : 'ROUTINE');
+
+  const triage = normalizeTriage(rawTriage);
 
   const demographics =
     session?.patientDemographics || session?.demographics || session?.patient || {};
@@ -647,11 +657,18 @@
     symptoms[0] ||
     "Clinical encounter";
 
-  const rules = (triageResult?.triggeredRules || session?.rules || [])
+  const sessionRedFlags = Array.isArray(session?.redFlags)
+    ? session.redFlags.map((r) => (typeof r === "string" ? r : r?.reason || r?.flag_type || ""))
+    : [];
+
+  const rules = [
+    ...(triageResult?.triggeredRules || session?.rules || []),
+    ...sessionRedFlags
+  ]
     .map((r) => (typeof r === "string" ? r.replace(/^RULE_/, "").replace(/_/g, " ") : r))
     .filter(Boolean);
 
-  const redFlags = triage !== "ROUTINE" ? rules : [];
+  const redFlags = triage !== "ROUTINE" ? (rules.length ? rules : ["Priority clinical alert"]) : [];
 
   return {
     id: session?.sessionId || session?.intakeId || session?.id || session?._id,
@@ -707,16 +724,22 @@
       return "ROUTINE";
     }
 
+    let norm = "";
     if (typeof value === "string") {
-      return value.toUpperCase();
+      norm = value.toUpperCase();
+    } else {
+      norm = (
+        value.level ||
+        value.triageLevel ||
+        value.triage ||
+        value.status ||
+        "ROUTINE"
+      ).toUpperCase();
     }
 
-    return (
-      value.level ||
-      value.triageLevel ||
-      value.status ||
-      "ROUTINE"
-    ).toUpperCase();
+    if (norm === "CRITICAL") return "EMERGENCY";
+    if (norm === "EMERGENCY" || norm === "URGENT" || norm === "ROUTINE") return norm;
+    return "ROUTINE";
   }
 
   /* ==========================================================

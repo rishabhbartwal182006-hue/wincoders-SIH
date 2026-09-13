@@ -4,6 +4,7 @@ const ProvisionalIntake = require('../models/ProvisionalIntake');
 const AuditLog = require('../models/AuditLog');
 const { isMongoConnected, memoryStore } = require('../config/db');
 const { analyzeDiscrepancies } = require('../services/discrepancyEngine');
+const { evaluateMultiSystemTriage } = require('../services/redFlagRules');
 
 /**
  * Kiosk Ingestion Handler (supports both Task 5 & Frontend Event contracts)
@@ -64,11 +65,23 @@ async function handleKioskIngestion(req, res) {
       new Map(combinedDiscrepancies.map(item => [item.flagId || item.message, item])).values()
     );
 
+    // Evaluate multi-system red flags and clinical triage level via clinical rules engine
+    const triageEval = evaluateMultiSystemTriage(payload);
+    const computedTriageLevel = triageEval.triageLevel || 'ROUTINE';
+
     const provisionalRecord = {
       ...payload,
       intakeId: intakeId,
       abhaId: abhaId,
       status: payload.status || 'PROVISIONAL',
+      triage: {
+        ...(payload.triage || {}),
+        triageLevel: computedTriageLevel,
+        urgencyScore: triageEval.urgencyScore || 3,
+        recommendedDepartment: payload.triage?.recommendedDepartment || (computedTriageLevel === 'EMERGENCY' ? 'Emergency Department' : computedTriageLevel === 'URGENT' ? 'Urgent Care Clinic' : 'General Medicine'),
+        protocolNotes: triageEval.reason || 'Standard Clinical Queue'
+      },
+      redFlags: triageEval.redFlags || [],
       discrepancyFlags: uniqueDiscrepancies,
       createdAt: payload.createdAt || new Date(),
       updatedAt: new Date()
@@ -98,7 +111,9 @@ async function handleKioskIngestion(req, res) {
         vitalsCaptured: !!payload.vitals,
         ocrDocsCount: payload.ocrDocuments ? payload.ocrDocuments.length : 0,
         chiefComplaintsCount: payload.chiefComplaints ? payload.chiefComplaints.length : 0,
-        discrepanciesDetected: uniqueDiscrepancies.length
+        discrepanciesDetected: uniqueDiscrepancies.length,
+        triageLevel: computedTriageLevel,
+        redFlagsCount: triageEval.redFlags?.length || 0
       },
       timestamp: new Date()
     };
@@ -124,12 +139,41 @@ async function handleKioskIngestion(req, res) {
         triageResult: {
           patientId: savedRecord.abhaId,
           triageLevel: savedRecord.triage?.triageLevel || 'ROUTINE',
-          reason: savedRecord.hpi?.narrative || 'Kiosk self-service intake completed.',
+          reason: savedRecord.triage?.protocolNotes || savedRecord.hpi?.narrative || 'Kiosk intake processed.',
           action: savedRecord.triage?.protocolNotes || 'Standard Clinical Queue',
-          triggeredRules: uniqueDiscrepancies.map(d => d.message),
+          triggeredRules: [
+            ...uniqueDiscrepancies.map(d => d.message),
+            ...(triageEval.redFlags || []).map(r => r.reason)
+          ],
           timestamp: new Date().toISOString()
         }
       });
+      io.emit('kiosk:intake_submitted', {
+        sessionId: savedRecord.intakeId,
+        intakeId: savedRecord.intakeId,
+        patientId: savedRecord.abhaId,
+        patientName: savedRecord.patientDemographics?.fullName,
+        triageLevel: savedRecord.triage?.triageLevel || 'ROUTINE',
+        urgencyScore: savedRecord.triage?.urgencyScore || 3,
+        redFlags: triageEval.redFlags || [],
+        status: savedRecord.status,
+        timestamp: new Date().toISOString(),
+        vitals: savedRecord.vitals,
+        symptoms: savedRecord.chiefComplaints
+      });
+
+      if (computedTriageLevel === 'EMERGENCY') {
+        io.emit('ESCALATION_REQUIRED', {
+          sessionId: savedRecord.intakeId,
+          patientId: savedRecord.abhaId,
+          session: { sessionId: savedRecord.intakeId, patientId: savedRecord.abhaId },
+          triageLevel: 'EMERGENCY',
+          urgencyScore: 10,
+          redFlags: triageEval.redFlags,
+          reason: triageEval.reason,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     return res.status(201).json({

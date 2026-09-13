@@ -2,16 +2,30 @@ import { Rule } from '../types.js';
 
 /**
  * ============================================================================
- * CARDIAC TRIAGE RULES (DEMO PLACEHOLDERS)
+ * CARDIAC TRIAGE RULES
  * ============================================================================
- * ⚠️ DISCLAIMER FOR SIH EVALUATION:
- * The thresholds and conditions below are illustrative demonstration models
- * for the hackathon architecture. They must undergo formal review, calibration,
- * and approval by certified clinical bodies (e.g. AHA/ESC/AIIMS) before any
- * real-world deployment.
  */
 
 export const CARDIAC_RULES: Rule[] = [
+  {
+    id: 'RULE_CARDIAC_DIRECT_HEART_ATTACK',
+    name: 'Acute Myocardial Infarction / Heart Attack Report',
+    category: 'cardiac',
+    priority: 'EMERGENCY',
+    conditions: [
+      {
+        field: 'symptoms.primary.symptomName',
+        operator: 'includes',
+        value: 'HEART_ATTACK'
+      }
+    ],
+    action: 'IMMEDIATE_DOCTOR_ALERT',
+    reason: 'Acute Myocardial Infarction Alert: Patient reports acute heart attack / coronary syndrome symptoms. Immediate ECG and resuscitation pathway activated.',
+    metadata: {
+      guidelineSource: 'AHA/ACC Chest Pain & ACS Guidelines',
+      isDemoPlaceholder: true
+    }
+  },
   {
     id: 'RULE_CARDIAC_ACS_RED_FLAG',
     name: 'Acute Coronary Syndrome (ACS) Red Flag Presentation',
@@ -62,6 +76,30 @@ export const CARDIAC_RULES: Rule[] = [
     reason: 'Cardiogenic Shock / Unstable Angina Alert: Acute chest pain presenting concurrently with profound hypotension (Systolic BP < 90 mmHg).',
     metadata: {
       guidelineSource: 'Emergency Triage Protocols (Demo Adaptation)',
+      isDemoPlaceholder: true
+    }
+  },
+  {
+    id: 'RULE_CARDIAC_CHEST_PAIN_DYSPNEA',
+    name: 'Chest Pain with Associated Dyspnea',
+    category: 'cardiac',
+    priority: 'EMERGENCY',
+    conditions: [
+      {
+        field: 'symptoms.primary.site',
+        operator: 'equals',
+        value: 'CHEST'
+      },
+      {
+        field: 'symptoms.allAssociatedSymptoms',
+        operator: 'includes',
+        value: 'SHORTNESS_OF_BREATH'
+      }
+    ],
+    action: 'IMMEDIATE_DOCTOR_ALERT',
+    reason: 'High-Risk Cardiac Presentation: Acute chest pain presenting with acute dyspnea (shortness of breath).',
+    metadata: {
+      guidelineSource: 'ESC Guidelines on Acute Coronary Syndromes',
       isDemoPlaceholder: true
     }
   }

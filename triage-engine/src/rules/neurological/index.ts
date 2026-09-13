@@ -2,11 +2,8 @@ import { Rule } from '../types.js';
 
 /**
  * ============================================================================
- * NEUROLOGICAL TRIAGE RULES (DEMO PLACEHOLDERS)
+ * NEUROLOGICAL TRIAGE RULES
  * ============================================================================
- * ⚠️ DISCLAIMER FOR SIH EVALUATION:
- * The neurological screening patterns below are demo placeholders
- * inspired by Emergency Medicine Red-Flag Headache protocols (SNOOP criteria).
  */
 
 export const NEUROLOGICAL_RULES: Rule[] = [
@@ -36,6 +33,44 @@ export const NEUROLOGICAL_RULES: Rule[] = [
     reason: 'Hyperacute Severe Headache (Thunderclap Onset): Instantaneous peak severe headache is a primary red flag for Subarachnoid Hemorrhage (SAH) or acute cerebral vascular crisis.',
     metadata: {
       guidelineSource: 'Emergency Medicine SNOOP Criteria (Demo Adaptation)',
+      isDemoPlaceholder: true
+    }
+  },
+  {
+    id: 'RULE_NEURO_STROKE_FAST',
+    name: 'Acute Stroke Symptoms (FAST Criteria)',
+    category: 'neurological',
+    priority: 'EMERGENCY',
+    conditions: [
+      {
+        field: 'symptoms.primary.symptomName',
+        operator: 'includes',
+        value: 'STROKE'
+      }
+    ],
+    action: 'IMMEDIATE_DOCTOR_ALERT',
+    reason: 'Acute Stroke Alert: Patient presents with acute focal neurological deficits (FAST criteria). Emergent neuroimaging and thrombolysis pathway activated.',
+    metadata: {
+      guidelineSource: 'AHA/ASA Acute Ischemic Stroke Guidelines',
+      isDemoPlaceholder: true
+    }
+  },
+  {
+    id: 'RULE_NEURO_UNCONSCIOUS_SYNCOPE',
+    name: 'Acute Loss of Consciousness / Syncope',
+    category: 'neurological',
+    priority: 'EMERGENCY',
+    conditions: [
+      {
+        field: 'symptoms.allAssociatedSymptoms',
+        operator: 'includes',
+        value: 'LOSS_OF_CONSCIOUSNESS'
+      }
+    ],
+    action: 'IMMEDIATE_DOCTOR_ALERT',
+    reason: 'Transient or Persistent Loss of Consciousness Alert: Patient presents with syncope or acute altered responsiveness requiring immediate evaluation.',
+    metadata: {
+      guidelineSource: 'Emergency Medicine Syncope Risk Stratification',
       isDemoPlaceholder: true
     }
   }

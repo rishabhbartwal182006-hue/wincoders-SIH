@@ -15,6 +15,7 @@ const sessionRoutes = require('./routes/sessionRoutes');
 const vitalsRoutes  = require('./routes/vitalsRoutes');
 const hprAuthMiddleware = require('./middleware/hprAuth');
 const ocrRoutes = require('./routes/ocrRoutes');
+const { evaluateMultiSystemTriage } = require('./services/redFlagRules');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -78,18 +79,36 @@ let patientQueue = [];
 
 // POST /api/patient/submit
 app.post('/api/patient/submit', (req, res) => {
-  const { patientId, name, age, symptoms, vitals, environment } = req.body || {};
+  const { patientId, name, age, symptoms, vitals, environment, hpi, chiefComplaint, chiefComplaints } = req.body || {};
 
   const generatedId = patientId || `PT-${Date.now().toString().slice(-4)}`;
-  const newPatient = {
+  const patientData = {
     patientId: generatedId,
     name: name || "Anonymous Patient",
     age: age || "—",
     symptoms: Array.isArray(symptoms) ? symptoms : symptoms ? [symptoms] : [],
+    chiefComplaint: chiefComplaint || (Array.isArray(symptoms) && symptoms.length ? symptoms[0] : "General intake"),
+    chiefComplaints: chiefComplaints || [],
+    hpi: hpi || {},
     environment: environment || { altitudeMeters: 2438, altitudeSource: 'facility_config' },
     vitals: vitals || {},
-    timestamp: new Date().toISOString(),
-    status: "waiting"
+    timestamp: new Date().toISOString()
+  };
+
+  // Evaluate clinical triage & multi-system red flags
+  const triageResult = evaluateMultiSystemTriage(patientData);
+
+  const newPatient = {
+    ...patientData,
+    triageLevel: triageResult.triageLevel,
+    triage: triageResult.triageLevel,
+    urgencyTier: triageResult.urgencyTier,
+    urgencyScore: triageResult.urgencyScore,
+    redFlags: triageResult.redFlags,
+    redFlagCount: triageResult.redFlagCount,
+    action: triageResult.action,
+    reason: triageResult.reason,
+    status: triageResult.triageLevel === 'EMERGENCY' ? 'critical' : 'waiting'
   };
 
   patientQueue.push(newPatient);
@@ -100,13 +119,39 @@ app.post('/api/patient/submit', (req, res) => {
     io.emit('patient:new', newPatient);
     io.emit('kiosk:intake_submitted', {
       sessionId: newPatient.patientId,
+      intakeId: newPatient.patientId,
       patientId: newPatient.patientId,
       patientName: newPatient.name,
       altitude: newPatient.environment?.altitudeMeters || 2438,
-      triageLevel: 'ROUTINE',
-      status: 'waiting',
-      timestamp: newPatient.timestamp
+      triageLevel: newPatient.triageLevel,
+      urgencyScore: newPatient.urgencyScore,
+      redFlags: newPatient.redFlags,
+      reason: newPatient.reason,
+      status: newPatient.status,
+      timestamp: newPatient.timestamp,
+      vitals: newPatient.vitals,
+      symptoms: newPatient.symptoms
     });
+
+    // If Emergency, immediately trigger Doctor Command Center audio alarm and modal
+    if (newPatient.triageLevel === 'EMERGENCY') {
+      io.emit('ESCALATION_REQUIRED', {
+        sessionId: newPatient.patientId,
+        patientId: newPatient.patientId,
+        session: { sessionId: newPatient.patientId, patientId: newPatient.patientId },
+        patient: newPatient,
+        triageLevel: 'EMERGENCY',
+        urgencyScore: newPatient.urgencyScore,
+        redFlags: newPatient.redFlags,
+        reason: newPatient.reason,
+        timestamp: newPatient.timestamp
+      });
+      io.emit('RULE_TRIGGERED', {
+        sessionId: newPatient.patientId,
+        triageLevel: 'EMERGENCY',
+        redFlags: newPatient.redFlags
+      });
+    }
   }
 
   return res.status(201).json({
@@ -118,7 +163,14 @@ app.post('/api/patient/submit', (req, res) => {
 
 // GET /api/doctor/queue
 app.get('/api/doctor/queue', (req, res) => {
-  return res.status(200).json(patientQueue);
+  const priorityOrder = { 'EMERGENCY': 1, 'CRITICAL': 1, 'URGENT': 2, 'ROUTINE': 3 };
+  const sortedQueue = [...patientQueue].sort((a, b) => {
+    const pA = priorityOrder[a.triageLevel || a.triage] || 99;
+    const pB = priorityOrder[b.triageLevel || b.triage] || 99;
+    if (pA !== pB) return pA - pB;
+    return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+  });
+  return res.status(200).json(sortedQueue);
 });
 
 // Health Check Endpoint
