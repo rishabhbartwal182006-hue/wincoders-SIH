@@ -3,6 +3,9 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // OCR Documents State
+const ocrDocuments = [];
+
   // Vitals State
   const vitalsState = {
     systolic: 165,
@@ -105,6 +108,222 @@
     };
   }
 
+  // ==========================================
+// DOCUMENT OCR
+// ==========================================
+
+$('btnUploadOCR').addEventListener(
+  'click',
+  async () => {
+
+    const fileInput = $('ocrDocument');
+
+    const file = fileInput.files[0];
+
+    if (!file) {
+
+      alert(
+        'Please select a prescription or lab report first.'
+      );
+
+      return;
+    }
+
+
+    // Show loading
+    $('ocrLoading').style.display = 'block';
+
+    $('ocrResult').style.display = 'none';
+
+    $('ocrStatus').textContent =
+      '[PROCESSING DOCUMENT...]';
+
+
+    try {
+
+      const formData = new FormData();
+
+      formData.append(
+        'document',
+        file
+      );
+
+
+      const response = await fetch(
+        '/api/v1/ocr',
+        {
+          method: 'POST',
+          body: formData
+        }
+      );
+
+
+      const result =
+        await response.json();
+
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+
+        throw new Error(
+          result.message ||
+          'OCR processing failed.'
+        );
+
+      }
+
+
+      // OCR document returned by backend
+      const ocrDocument =
+        result.data;
+
+
+      // Store document for final intake
+      ocrDocuments.push(
+        ocrDocument
+      );
+
+
+      // Structured OCR data
+      const structuredData =
+        ocrDocument.structuredData;
+
+
+      // ======================================
+      // DISPLAY OCR RESULT
+      // ======================================
+
+      $('ocrDocumentType')
+        .textContent =
+        structuredData.documentType ||
+        'UNKNOWN';
+
+
+      $('ocrPatientName')
+        .textContent =
+        structuredData.patientName ||
+        'Not detected';
+
+
+      $('ocrAge')
+        .textContent =
+        structuredData.age ??
+        'Not detected';
+
+
+      $('ocrGender')
+        .textContent =
+        structuredData.gender ||
+        'Not detected';
+
+
+      $('ocrDate')
+        .textContent =
+        structuredData.date ||
+        'Not detected';
+
+
+      $('ocrConfidence')
+        .textContent =
+        `${Math.round(
+          ocrDocument.confidence * 100
+        )}%`;
+
+
+      // ======================================
+      // DISPLAY MEDICATIONS
+      // ======================================
+
+      const medicationContainer =
+        $('ocrMedicationsContainer');
+
+
+      medicationContainer.innerHTML = '';
+
+
+      if (
+        structuredData.medications &&
+        structuredData.medications.length > 0
+      ) {
+
+        const heading =
+          document.createElement('h4');
+
+        heading.textContent =
+          'Detected Medications';
+
+        medicationContainer.appendChild(
+          heading
+        );
+
+
+        structuredData.medications.forEach(
+          (medicine) => {
+
+            const div =
+              document.createElement('div');
+
+            div.style.marginBottom =
+              '8px';
+
+            div.textContent =
+              `${medicine.name}` +
+              `${medicine.dosage ? ' - ' + medicine.dosage : ''}` +
+              `${medicine.frequency ? ' - ' + medicine.frequency : ''}`;
+
+            medicationContainer.appendChild(
+              div
+            );
+
+          }
+        );
+
+      } else {
+
+        medicationContainer.textContent =
+          'No medications detected.';
+
+      }
+
+
+      // Show result
+      $('ocrResult').style.display =
+        'block';
+
+
+      $('ocrStatus').textContent =
+        `[${ocrDocuments.length} DOCUMENT(S) SCANNED]`;
+
+
+    } catch (error) {
+
+      console.error(
+        '[OCR ERROR]',
+        error
+      );
+
+
+      $('ocrStatus').textContent =
+        '[OCR FAILED]';
+
+
+      alert(
+        `OCR processing failed: ${error.message}`
+      );
+
+
+    } finally {
+
+      $('ocrLoading').style.display =
+        'none';
+
+    }
+
+  }
+);
+
   // Submit Handler
   $('btnSubmitIntake').addEventListener('click', async () => {
     const fullName = $('fullName').value.trim() || 'Anonymous Patient';
@@ -136,6 +355,9 @@
           timestamp: timestamp
         }
       },
+
+      ocrDocuments: ocrDocuments,
+      
       vitals: {
         bloodPressure: {
           systolic: { value: vitalsState.systolic, unit: 'mmHg', provenanceMeta: { provenance: 'device-captured', confidence: 0.99, timestamp } },

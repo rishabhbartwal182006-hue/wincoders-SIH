@@ -312,3 +312,486 @@ body {
     transform: none;
   }
 }
+
+/* =========================================================
+   MEDIKIOSK PATIENT KIOSK
+   Matches the main MediKiosk visual language
+   ========================================================= */
+
+.kiosk-container {
+  min-height: 100vh;
+  background: var(--mk-bg);
+  color: var(--mk-ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  padding-bottom: 60px;
+}
+
+/* ---------- Kiosk Header ---------- */
+
+.kiosk-header {
+  background: var(--mk-surface);
+  border-bottom: 1px solid var(--mk-border);
+  min-height: 76px;
+  padding: 0 6%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  box-shadow: 0 2px 8px rgba(16, 27, 45, 0.04);
+}
+
+.kiosk-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Sora', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--mk-ink);
+}
+
+.kiosk-title span {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--mk-ink);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
+/* ---------- Staff Mode ---------- */
+
+.staff-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--mk-ink-soft);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.staff-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--mk-patient);
+}
+
+/* ---------- Main Content ---------- */
+
+.kiosk-container > .card-section,
+.kiosk-container > .submit-btn {
+  width: min(1080px, calc(100% - 48px));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ---------- Section Cards ---------- */
+
+.card-section {
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-border);
+  border-radius: 18px;
+  padding: 28px;
+  margin-top: 24px;
+  box-shadow: 0 1px 3px rgba(16, 27, 45, 0.04);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--mk-border);
+
+  font-family: 'Sora', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--mk-ink);
+}
+
+.card-title > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-title > span:first-child::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mk-patient);
+  box-shadow: 0 0 0 4px var(--mk-patient-tint);
+}
+
+/* ---------- Forms ---------- */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--mk-ink-soft);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  border: 1px solid var(--mk-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #ffffff;
+  color: var(--mk-ink);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: var(--mk-ink-faint);
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: var(--mk-patient);
+  box-shadow: 0 0 0 3px rgba(37, 99, 166, 0.10);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* ---------- Clinical Mode ---------- */
+
+.mode-switcher {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.mode-btn {
+  border: 1px solid var(--mk-border);
+  background: #ffffff;
+  color: var(--mk-ink-soft);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.mode-btn:hover {
+  border-color: var(--mk-patient);
+  color: var(--mk-patient);
+}
+
+.mode-btn.active {
+  background: var(--mk-patient);
+  border-color: var(--mk-patient);
+  color: #ffffff;
+}
+
+/* ---------- Vitals ---------- */
+
+.vitals-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.vital-card {
+  background: #ffffff;
+  border: 1px solid var(--mk-border);
+  border-radius: 14px;
+  padding: 20px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.vital-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(16, 27, 45, 0.07);
+}
+
+.vital-card-label {
+  font-size: 0.78rem;
+  color: var(--mk-ink-soft);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.vital-value {
+  font-family: 'Sora', sans-serif;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--mk-ink);
+  margin-bottom: 5px;
+}
+
+.vital-sub {
+  color: var(--mk-ink-faint);
+  font-size: 0.74rem;
+  margin-bottom: 15px;
+}
+
+.vital-src {
+  color: var(--mk-patient);
+  font-weight: 600;
+}
+
+.manual-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.manual-row input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--mk-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 0.78rem;
+  outline: none;
+}
+
+.manual-row input:focus {
+  border-color: var(--mk-patient);
+}
+
+.vital-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.btn-action {
+  border: 1px solid var(--mk-border);
+  background: #ffffff;
+  color: var(--mk-patient);
+  border-radius: 8px;
+  padding: 8px 11px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-action:hover {
+  background: var(--mk-patient-tint);
+  border-color: var(--mk-patient);
+}
+
+.btn-device {
+  color: var(--mk-doctor);
+}
+
+.btn-device:hover {
+  background: var(--mk-doctor-tint);
+  border-color: var(--mk-doctor);
+}
+
+/* ---------- AYUSH Advisory ---------- */
+
+.advisory-box {
+  margin-top: 22px;
+  background: var(--mk-doctor-tint);
+  border: 1px solid #c9e8df;
+  border-radius: 12px;
+  padding: 15px 17px;
+  color: #176b5a;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+/* ---------- OCR ---------- */
+
+#ocrDocument {
+  border: 2px dashed #cfd8e3;
+  border-radius: 12px;
+  padding: 18px;
+  background: #f9fbfd;
+  cursor: pointer;
+}
+
+#ocrDocument:hover {
+  border-color: var(--mk-patient);
+  background: var(--mk-patient-tint);
+}
+
+#btnUploadOCR {
+  background: var(--mk-patient);
+  border-color: var(--mk-patient);
+  color: #ffffff;
+  padding: 11px 18px;
+}
+
+#btnUploadOCR:hover {
+  background: #1d4f85;
+  border-color: #1d4f85;
+}
+
+#ocrLoading {
+  background: var(--mk-patient-tint);
+  color: var(--mk-patient);
+  border-radius: 10px;
+  padding: 12px 15px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+#ocrResult {
+  background: #f9fbfd;
+  border: 1px solid var(--mk-border) !important;
+  border-radius: 14px !important;
+}
+
+#ocrResult h4 {
+  font-family: 'Sora', sans-serif;
+  color: var(--mk-ink);
+  margin-bottom: 14px;
+}
+
+#ocrResult p {
+  margin-bottom: 9px;
+  color: var(--mk-ink-soft);
+  font-size: 0.85rem;
+}
+
+#ocrResult strong {
+  color: var(--mk-ink);
+}
+
+#ocrMedicationsContainer {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--mk-border);
+}
+
+#ocrMedicationsContainer > div {
+  background: #ffffff;
+  border: 1px solid var(--mk-border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 0.83rem;
+  color: var(--mk-ink-soft);
+}
+
+/* ---------- Submit ---------- */
+
+.submit-btn {
+  display: block;
+  margin-top: 28px !important;
+  border: none;
+  border-radius: 12px;
+  padding: 15px 24px;
+  background: var(--mk-patient);
+  color: #ffffff;
+  font-family: 'Sora', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(37, 99, 166, 0.18);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(37, 99, 166, 0.25);
+}
+
+.submit-btn:active {
+  transform: translateY(0);
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 900px) {
+  .vitals-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .kiosk-header {
+    padding: 16px 20px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .kiosk-container > .card-section,
+  .kiosk-container > .submit-btn {
+    width: calc(100% - 28px);
+  }
+
+  .card-section {
+    padding: 20px;
+    border-radius: 14px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-group[style*="span 2"] {
+    grid-column: span 1 !important;
+  }
+
+  .vitals-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mode-switcher {
+    flex-direction: column;
+  }
+
+  .mode-btn {
+    width: 100%;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vital-card,
+  .submit-btn,
+  .btn-action,
+  .mode-btn {
+    transition: none;
+  }
+
+  .vital-card:hover,
+  .submit-btn:hover {
+    transform: none;
+  }
+}
