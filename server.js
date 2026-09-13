@@ -5,7 +5,8 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const { Server } = require('socket.io');
-const { connectDB } = require('./config/db');
+const { connectDB, isMongoConnected, memoryStore } = require('./config/db');
+const ProvisionalIntake = require('./models/ProvisionalIntake');
 
 // Import Routes & Handlers
 const kioskRoutes = require('./routes/kioskRoutes');
@@ -74,14 +75,33 @@ app.post('/api/v1/intake', kioskRoutes.handleKioskIngestion);
 app.post('/api/v1/doctor/verify', hprAuthMiddleware, clinicalRoutes.handleClinicalCommit);
 app.get('/api/v1/export/fhir/:intakeId', clinicalRoutes.handleFhirExport);
 
+// GET /api/v1/facility/config
+app.get('/api/v1/facility/config', (req, res) => {
+  const envAlt = process.env.FACILITY_ALTITUDE_METERS;
+  const facilityAltitudeM = envAlt !== undefined && envAlt !== '' && !isNaN(Number(envAlt))
+    ? Number(envAlt)
+    : null;
+  res.json({
+    facilityId: process.env.FACILITY_ID || 'KIOSK-FACILITY-01',
+    facilityName: process.env.FACILITY_NAME || 'MediKiosk Clinical Station',
+    facilityAltitudeM: facilityAltitudeM,
+    altitudeConfigured: facilityAltitudeM !== null
+  });
+});
+
 // In-Memory Patient Submissions Queue
 let patientQueue = [];
 
 // POST /api/patient/submit
 app.post('/api/patient/submit', (req, res) => {
-  const { patientId, name, age, symptoms, vitals, environment, hpi, chiefComplaint, chiefComplaints } = req.body || {};
+  const { patientId, name, age, symptoms, vitals, environment, altitudeContext, exposure, hpi, chiefComplaint, chiefComplaints } = req.body || {};
 
   const generatedId = patientId || `PT-${Date.now().toString().slice(-4)}`;
+  const envAlt = process.env.FACILITY_ALTITUDE_METERS;
+  const facilityAlt = envAlt !== undefined && envAlt !== '' && !isNaN(Number(envAlt))
+    ? Number(envAlt)
+    : (environment?.altitudeMeters ?? altitudeContext?.facilityAltitudeM ?? null);
+
   const patientData = {
     patientId: generatedId,
     name: name || "Anonymous Patient",
@@ -90,7 +110,11 @@ app.post('/api/patient/submit', (req, res) => {
     chiefComplaint: chiefComplaint || (Array.isArray(symptoms) && symptoms.length ? symptoms[0] : "General intake"),
     chiefComplaints: chiefComplaints || [],
     hpi: hpi || {},
-    environment: environment || { altitudeMeters: 2438, altitudeSource: 'facility_config' },
+    altitudeContext: altitudeContext || {
+      facilityAltitudeM: facilityAlt,
+      exposure: exposure || {}
+    },
+    environment: environment || { altitudeMeters: facilityAlt, altitudeSource: facilityAlt !== null ? 'facility_config' : 'unconfigured' },
     vitals: vitals || {},
     timestamp: new Date().toISOString()
   };
@@ -108,10 +132,45 @@ app.post('/api/patient/submit', (req, res) => {
     redFlagCount: triageResult.redFlagCount,
     action: triageResult.action,
     reason: triageResult.reason,
+    altitudeContext: triageResult.altitudeContext,
     status: triageResult.triageLevel === 'EMERGENCY' ? 'critical' : 'waiting'
   };
 
   patientQueue.push(newPatient);
+
+  // Mirror to ProvisionalIntake store so single-session and audit APIs find this encounter
+  try {
+    const intakeDoc = {
+      intakeId: generatedId,
+      abhaId: generatedId,
+      patientDemographics: {
+        fullName: newPatient.name,
+        age: newPatient.age,
+        gender: req.body?.gender || "M"
+      },
+      vitals: newPatient.vitals,
+      chiefComplaints: (newPatient.symptoms || []).map(s => ({ symptom: s, severity: 'Moderate' })),
+      hpi: newPatient.hpi,
+      triage: {
+        triageLevel: newPatient.triageLevel,
+        urgencyScore: newPatient.urgencyScore,
+        protocolNotes: newPatient.reason
+      },
+      redFlags: newPatient.redFlags,
+      altitudeContext: newPatient.altitudeContext,
+      environment: newPatient.environment,
+      status: newPatient.status,
+      createdAt: newPatient.timestamp,
+      updatedAt: newPatient.timestamp
+    };
+    if (isMongoConnected()) {
+      ProvisionalIntake.findOneAndUpdate({ intakeId: generatedId }, intakeDoc, { upsert: true, new: true }).catch(() => {});
+    } else {
+      memoryStore.save('ProvisionalIntake', intakeDoc).catch(() => {});
+    }
+  } catch (err) {
+    // Non-blocking in-memory persistence
+  }
 
   // Broadcast to Socket.IO clients if active
   const io = req.app.get('io');
@@ -122,7 +181,7 @@ app.post('/api/patient/submit', (req, res) => {
       intakeId: newPatient.patientId,
       patientId: newPatient.patientId,
       patientName: newPatient.name,
-      altitude: newPatient.environment?.altitudeMeters || 2438,
+      altitude: newPatient.environment?.altitudeMeters ?? newPatient.altitudeContext?.facilityAltitudeM ?? null,
       triageLevel: newPatient.triageLevel,
       urgencyScore: newPatient.urgencyScore,
       redFlags: newPatient.redFlags,
@@ -162,7 +221,43 @@ app.post('/api/patient/submit', (req, res) => {
 });
 
 // GET /api/doctor/queue
-app.get('/api/doctor/queue', (req, res) => {
+app.get('/api/doctor/queue', async (req, res) => {
+  try {
+    let dbRecords = [];
+    if (isMongoConnected()) {
+      dbRecords = await ProvisionalIntake.find().sort({ updatedAt: -1 });
+    } else {
+      dbRecords = await memoryStore.find('ProvisionalIntake');
+    }
+
+    const existingIds = new Set(patientQueue.map(p => p.patientId || p.sessionId || p.id));
+    for (const rec of dbRecords) {
+      const id = rec.intakeId || rec.abhaId;
+      if (id && !existingIds.has(id)) {
+        patientQueue.push({
+          patientId: id,
+          sessionId: rec.intakeId || id,
+          name: rec.patientDemographics?.fullName || "Anonymous Patient",
+          age: rec.patientDemographics?.age || "—",
+          gender: rec.patientDemographics?.gender || "M",
+          symptoms: (rec.chiefComplaints || []).map(c => c.symptom),
+          chiefComplaint: rec.chiefComplaints?.[0]?.symptom || "General intake",
+          vitals: rec.vitals || {},
+          altitudeContext: rec.altitudeContext || null,
+          triageLevel: rec.triage?.triageLevel || 'ROUTINE',
+          triage: rec.triage?.triageLevel || 'ROUTINE',
+          urgencyScore: rec.triage?.urgencyScore || 3,
+          redFlags: rec.redFlags || [],
+          status: rec.status || (rec.triage?.triageLevel === 'EMERGENCY' ? 'critical' : 'waiting'),
+          timestamp: rec.createdAt || new Date().toISOString()
+        });
+        existingIds.add(id);
+      }
+    }
+  } catch (err) {
+    // Graceful fallback to patientQueue
+  }
+
   const priorityOrder = { 'EMERGENCY': 1, 'CRITICAL': 1, 'URGENT': 2, 'ROUTINE': 3 };
   const sortedQueue = [...patientQueue].sort((a, b) => {
     const pA = priorityOrder[a.triageLevel || a.triage] || 99;

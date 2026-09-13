@@ -9,48 +9,94 @@ const { syncToAbdmNetwork } = require('../services/abdmSyncService');
 const { isMongoConnected, memoryStore } = require('../config/db');
 const { interpretVitals, DISCLAIMER } = require('../services/altitudeAdjustmentService');
 
+function extractVitalScalar(val) {
+  if (val === undefined || val === null) return undefined;
+  if (typeof val === 'object') {
+    const inner = val.value ?? val.vitalValue;
+    return inner !== undefined && inner !== null ? inner : undefined;
+  }
+  return val;
+}
+
+function extractBPValues(vitals) {
+  if (!vitals) return { systolic: undefined, diastolic: undefined, stringVal: undefined };
+
+  const rawBp = vitals.bp || vitals.blood_pressure || (typeof vitals.bloodPressure === 'string' ? vitals.bloodPressure : undefined);
+  if (typeof rawBp === 'string' && rawBp.includes('/')) {
+    const parts = rawBp.split('/');
+    return {
+      systolic: Number(parts[0]) || parts[0],
+      diastolic: Number(parts[1]) || parts[1],
+      stringVal: rawBp
+    };
+  }
+
+  const bpObj = (vitals.bloodPressure && typeof vitals.bloodPressure === 'object') ? vitals.bloodPressure : vitals;
+  const sysRaw = bpObj.systolic !== undefined ? bpObj.systolic : (bpObj.systolicBP ?? bpObj.systolic_bp);
+  const diaRaw = bpObj.diastolic !== undefined ? bpObj.diastolic : (bpObj.diastolicBP ?? bpObj.diastolic_bp);
+
+  const sys = extractVitalScalar(sysRaw);
+  const dia = extractVitalScalar(diaRaw);
+
+  if (sys !== undefined && dia !== undefined) {
+    return {
+      systolic: sys,
+      diastolic: dia,
+      stringVal: `${sys}/${dia}`
+    };
+  }
+
+  return { systolic: undefined, diastolic: undefined, stringVal: undefined };
+}
+
 /**
  * Format patient record into Doctor Dashboard Summary & Session structures
  */
 function buildDashboardSummary(record) {
+  const bpData = extractBPValues(record.vitals);
+  const spo2Val = extractVitalScalar(record.vitals?.spo2);
+  const hrVal = extractVitalScalar(record.vitals?.heartRate ?? record.vitals?.hr ?? record.vitals?.heart_rate);
+  const tempVal = extractVitalScalar(record.vitals?.temperature ?? record.vitals?.temp);
+  const glucoseVal = extractVitalScalar(record.vitals?.bloodGlucose ?? record.vitals?.bloodSugar ?? record.vitals?.glucose ?? record.vitals?.blood_glucose);
+
   const preConsultationSummary = {
     order: ["Vitals", "Chief Complaint", "HPI", "History", "AYUSH parameters"],
     section1_vitals: {
-      bloodPressure: record.vitals?.bloodPressure ? {
-        systolic: record.vitals.bloodPressure.systolic?.value,
-        diastolic: record.vitals.bloodPressure.diastolic?.value,
+      bloodPressure: bpData.stringVal ? {
+        systolic: bpData.systolic,
+        diastolic: bpData.diastolic,
         unit: "mmHg",
-        provenance: record.vitals.bloodPressure.systolic?.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.bloodPressure.systolic?.provenanceMeta?.confidence || 1.0,
-        altitudeContext: record.vitals.bloodPressure.systolic?.altitudeContext || null
+        provenance: record.vitals?.bloodPressure?.systolic?.provenanceMeta?.provenance || "device-captured",
+        confidence: 1.0,
+        altitudeContext: record.vitals?.bloodPressure?.systolic?.altitudeContext || null
       } : null,
-      spo2: record.vitals?.spo2 ? {
-        value: record.vitals.spo2.value,
-        unit: record.vitals.spo2.unit || "%",
-        provenance: record.vitals.spo2.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.spo2.provenanceMeta?.confidence || 1.0,
-        altitudeContext: record.vitals.spo2.altitudeContext || null
+      spo2: spo2Val !== undefined ? {
+        value: spo2Val,
+        unit: "%",
+        provenance: record.vitals?.spo2?.provenanceMeta?.provenance || "device-captured",
+        confidence: 1.0,
+        altitudeContext: record.vitals?.spo2?.altitudeContext || null
       } : null,
-      heartRate: record.vitals?.heartRate ? {
-        value: record.vitals.heartRate.value,
-        unit: record.vitals.heartRate.unit || "bpm",
-        provenance: record.vitals.heartRate.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.heartRate.provenanceMeta?.confidence || 1.0,
-        altitudeContext: record.vitals.heartRate.altitudeContext || null
+      heartRate: hrVal !== undefined ? {
+        value: hrVal,
+        unit: "bpm",
+        provenance: record.vitals?.heartRate?.provenanceMeta?.provenance || "device-captured",
+        confidence: 1.0,
+        altitudeContext: record.vitals?.heartRate?.altitudeContext || null
       } : null,
-      temperature: record.vitals?.temperature ? {
-        value: record.vitals.temperature.value,
-        unit: record.vitals.temperature.unit || "°F",
-        provenance: record.vitals.temperature.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.temperature.provenanceMeta?.confidence || 1.0,
-        altitudeContext: record.vitals.temperature.altitudeContext || null
+      temperature: tempVal !== undefined ? {
+        value: tempVal,
+        unit: "°C",
+        provenance: record.vitals?.temperature?.provenanceMeta?.provenance || "device-captured",
+        confidence: 1.0,
+        altitudeContext: null
       } : null,
-      bloodGlucose: record.vitals?.bloodGlucose ? {
-        value: record.vitals.bloodGlucose.value,
-        unit: record.vitals.bloodGlucose.unit || "mg/dL",
-        provenance: record.vitals.bloodGlucose.provenanceMeta?.provenance || "device-captured",
-        confidence: record.vitals.bloodGlucose.provenanceMeta?.confidence || 1.0,
-        altitudeContext: record.vitals.bloodGlucose.altitudeContext || null
+      bloodGlucose: glucoseVal !== undefined ? {
+        value: glucoseVal,
+        unit: "mg/dL",
+        provenance: record.vitals?.bloodGlucose?.provenanceMeta?.provenance || "device-captured",
+        confidence: 1.0,
+        altitudeContext: null
       } : null
     },
     section2_chiefComplaints: (record.chiefComplaints || []).map(cc => ({
@@ -129,25 +175,25 @@ function buildDashboardSummary(record) {
       timestamp: record.createdAt
     },
     vitals: {
-      HEART_RATE: record.vitals?.heartRate ? {
-        value: record.vitals.heartRate.value,
-        altitudeContext: record.vitals.heartRate.altitudeContext
+      HEART_RATE: hrVal !== undefined ? {
+        value: hrVal,
+        altitudeContext: record.vitals?.heartRate?.altitudeContext || null
       } : null,
-      SPO2: record.vitals?.spo2 ? {
-        value: record.vitals.spo2.value,
-        altitudeContext: record.vitals.spo2.altitudeContext
+      SPO2: spo2Val !== undefined ? {
+        value: spo2Val,
+        altitudeContext: record.vitals?.spo2?.altitudeContext || null
       } : null,
-      BLOOD_PRESSURE: record.vitals?.bloodPressure ? {
-        value: `${record.vitals.bloodPressure.systolic?.value}/${record.vitals.bloodPressure.diastolic?.value}`,
-        altitudeContext: record.vitals.bloodPressure.systolic?.altitudeContext
+      BLOOD_PRESSURE: bpData.stringVal ? {
+        value: bpData.stringVal,
+        altitudeContext: record.vitals?.bloodPressure?.systolic?.altitudeContext || null
       } : null,
-      TEMPERATURE: record.vitals?.temperature ? {
-        value: record.vitals.temperature.value,
-        altitudeContext: record.vitals.temperature.altitudeContext
+      TEMPERATURE: tempVal !== undefined ? {
+        value: tempVal,
+        altitudeContext: null
       } : null,
-      BLOOD_GLUCOSE: record.vitals?.bloodGlucose ? {
-        value: record.vitals.bloodGlucose.value,
-        altitudeContext: record.vitals.bloodGlucose.altitudeContext
+      BLOOD_GLUCOSE: glucoseVal !== undefined ? {
+        value: glucoseVal,
+        altitudeContext: null
       } : null
     },
     symptoms: {

@@ -6,13 +6,18 @@
   // OCR Documents State
 const ocrDocuments = [];
 
-  // Vitals State - default healthy physiological baseline
+  // Vitals State - null until captured by hardware or entered manually
   const vitalsState = {
-    systolic: 120,
-    diastolic: 80,
-    spo2: 98,
-    heartRate: 72,
-    bloodGlucose: 95
+    systolic: null,
+    diastolic: null,
+    spo2: null,
+    heartRate: null,
+    bloodGlucose: null,
+    provenance: {
+      bp: 'unmeasured',
+      spo2: 'unmeasured',
+      glucose: 'unmeasured'
+    }
   };
 
   // Clinical Mode Switcher
@@ -39,86 +44,113 @@ const ocrDocuments = [];
     allopathySec.style.display = 'none';
   });
 
-  // Manual Vitals Input Handlers
-  $('btnSaveBP')?.addEventListener('click', () => {
-    const s = parseInt($('inSys').value, 10);
-    const d = parseInt($('inDia').value, 10);
+  // Real-time manual vitals auto-harvest & input listeners
+  function syncBPInputs() {
+    const s = parseInt($('inSys')?.value, 10);
+    const d = parseInt($('inDia')?.value, 10);
     if (!isNaN(s) && !isNaN(d)) {
       vitalsState.systolic = s;
       vitalsState.diastolic = d;
-      $('dispBP').textContent = `${s} / ${d}`;
+      vitalsState.provenance.bp = 'manual-entry';
+      if ($('dispBP')) $('dispBP').textContent = `${s} / ${d}`;
       const badge = $('srcBP');
       if (badge) badge.textContent = 'manual input';
-      alert(`Manual BP saved: ${s}/${d} mmHg`);
-    } else {
-      alert('Please enter valid systolic and diastolic numbers.');
+      updateVitalsModeBadge();
     }
-  });
+  }
 
-  $('btnSaveSpO2')?.addEventListener('click', () => {
-    const sp = parseInt($('inSpO2').value, 10);
-    const hr = parseInt($('inHR').value, 10);
+  function syncSpO2Inputs() {
+    const sp = parseInt($('inSpO2')?.value, 10);
+    const hr = parseInt($('inHR')?.value, 10);
     if (!isNaN(sp)) {
       vitalsState.spo2 = sp;
-      $('dispSpO2').textContent = `${sp}%`;
+      vitalsState.provenance.spo2 = 'manual-entry';
+      if ($('dispSpO2')) $('dispSpO2').textContent = `${sp}%`;
       const badge = $('srcSpO2');
       if (badge) badge.textContent = 'manual input';
     }
     if (!isNaN(hr)) {
       vitalsState.heartRate = hr;
-      $('dispHR').textContent = `${hr}`;
+      if ($('dispHR')) $('dispHR').textContent = `${hr}`;
     }
-    alert(`Manual Pulse/SpO2 saved: SpO2 ${vitalsState.spo2}%, HR ${vitalsState.heartRate} bpm`);
-  });
+    updateVitalsModeBadge();
+  }
 
-  $('btnSaveGlucose')?.addEventListener('click', () => {
-    const g = parseInt($('inGlucose').value, 10);
+  function syncGlucoseInput() {
+    const g = parseFloat($('inGlucose')?.value);
     if (!isNaN(g)) {
       vitalsState.bloodGlucose = g;
-      $('dispGlucose').textContent = `${g}`;
+      vitalsState.provenance.glucose = 'manual-entry';
+      if ($('dispGlucose')) $('dispGlucose').textContent = `${g}`;
       const badge = $('srcGlucose');
       if (badge) badge.textContent = 'manual input';
-      alert(`Manual Blood Glucose saved: ${g} mg/dL`);
-    } else {
-      alert('Please enter a valid glucose number.');
+      updateVitalsModeBadge();
     }
-  });
+  }
 
-  // Simulated Hardware Controls
-  $('btnMeasureBP')?.addEventListener('click', () => {
-    const sysList = [118, 120, 125, 130, 140];
-    const diaList = [78, 80, 82, 85, 88];
-    const idx = Math.floor(Math.random() * sysList.length);
-    vitalsState.systolic = sysList[idx];
-    vitalsState.diastolic = diaList[idx];
-    $('dispBP').textContent = `${vitalsState.systolic} / ${vitalsState.diastolic}`;
-    const badge = $('srcBP');
-    if (badge) badge.textContent = 'device-captured';
-    alert(`[Module 3 Hardware Sensor]: BP Cuff measurement completed -> ${vitalsState.systolic}/${vitalsState.diastolic} mmHg`);
-  });
+  function updateVitalsModeBadge() {
+    const hasAny = vitalsState.systolic !== null || vitalsState.spo2 !== null || vitalsState.bloodGlucose !== null;
+    const badge = $('vitalsModeBadge');
+    if (badge) {
+      badge.textContent = hasAny ? '[VITALS CAPTURED]' : '[NO VITALS CAPTURED]';
+      badge.style.color = hasAny ? '#0f766e' : '#b45309';
+    }
+  }
 
-  $('btnCaptureSpO2')?.addEventListener('click', () => {
-    const spo2List = [98, 97, 99, 96, 98];
-    const hrList = [72, 76, 80, 74, 68];
-    const idx = Math.floor(Math.random() * spo2List.length);
-    vitalsState.spo2 = spo2List[idx];
-    vitalsState.heartRate = hrList[idx];
-    $('dispSpO2').textContent = `${vitalsState.spo2}%`;
-    $('dispHR').textContent = `${vitalsState.heartRate}`;
-    const badge = $('srcSpO2');
-    if (badge) badge.textContent = 'device-captured';
-    alert(`[Module 3 Hardware Sensor]: Pulse Oximeter captured -> SpO₂: ${vitalsState.spo2}%, HR: ${vitalsState.heartRate} bpm`);
-  });
+  $('inSys')?.addEventListener('input', syncBPInputs);
+  $('inDia')?.addEventListener('input', syncBPInputs);
+  $('inSpO2')?.addEventListener('input', syncSpO2Inputs);
+  $('inHR')?.addEventListener('input', syncSpO2Inputs);
+  $('inGlucose')?.addEventListener('input', syncGlucoseInput);
 
-  $('btnReadGlucose')?.addEventListener('click', () => {
-    const glucList = [92, 105, 110, 115, 120];
-    const idx = Math.floor(Math.random() * glucList.length);
-    vitalsState.bloodGlucose = glucList[idx];
-    $('dispGlucose').textContent = `${vitalsState.bloodGlucose}`;
-    const badge = $('srcGlucose');
-    if (badge) badge.textContent = 'device-captured';
-    alert(`[Module 3 Hardware Sensor]: Glucometer reading captured -> ${vitalsState.bloodGlucose} mg/dL`);
-  });
+  $('btnSaveBP')?.addEventListener('click', syncBPInputs);
+  $('btnSaveSpO2')?.addEventListener('click', syncSpO2Inputs);
+  $('btnSaveGlucose')?.addEventListener('click', syncGlucoseInput);
+
+  // Hardware Scanner Trigger (Calls FastAPI/ESP32 via Backend)
+  async function triggerHardwareVitalScan(expectedType) {
+    const activeSessionId = $('kioskSessionId')?.value || `KIOSK-${Date.now()}`;
+    try {
+      const resp = await fetch('/api/v1/vitals/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: activeSessionId })
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.error || 'Hardware scanner communication failed.');
+      }
+      const reading = data.reading;
+      if (reading.type === 'spo2') {
+        vitalsState.spo2 = Number(reading.value);
+        vitalsState.provenance.spo2 = 'device-captured';
+        $('dispSpO2').textContent = `${reading.value}%`;
+        const badge = $('srcSpO2');
+        if (badge) badge.textContent = 'device-captured';
+      } else if (reading.type === 'blood_pressure') {
+        const parts = String(reading.value).split('/');
+        vitalsState.systolic = Number(parts[0]) || null;
+        vitalsState.diastolic = Number(parts[1]) || null;
+        vitalsState.provenance.bp = 'device-captured';
+        $('dispBP').textContent = `${reading.value}`;
+        const badge = $('srcBP');
+        if (badge) badge.textContent = 'device-captured';
+      } else {
+        vitalsState.bloodGlucose = Number(reading.value);
+        vitalsState.provenance.glucose = 'device-captured';
+        $('dispGlucose').textContent = `${reading.value}`;
+        const badge = $('srcGlucose');
+        if (badge) badge.textContent = 'device-captured';
+      }
+      alert(`[Hardware Sensor]: Captured ${reading.type} reading: ${reading.value} ${reading.unit || ''}`);
+    } catch (err) {
+      alert(`Hardware Scanner: ${err.message}\nPlease enter measurement manually if device is offline.`);
+    }
+  }
+
+  $('btnMeasureBP')?.addEventListener('click', () => triggerHardwareVitalScan('blood_pressure'));
+  $('btnCaptureSpO2')?.addEventListener('click', () => triggerHardwareVitalScan('spo2'));
+  $('btnReadGlucose')?.addEventListener('click', () => triggerHardwareVitalScan('blood_glucose'));
 
   /**
    * Dynamic Multi-System Triage Evaluator
@@ -441,9 +473,18 @@ $('btnUploadOCR').addEventListener(
     const isStaff = $('staffModeToggle').checked;
     const provenanceType = isStaff ? 'touch-selected' : 'patient-spoken';
 
+    // Automatically harvest any entered manual vitals before submit
+    syncBPInputs();
+    syncSpO2Inputs();
+    syncGlucoseInput();
+
     // Calculate Triage Level dynamically via Multi-System Engine
     const chiefComplaintText = `${$('chiefComplaint').value} ${$('hpiNarrative').value}`;
     const triageEval = calculateClinicalTriageLevel(vitalsState, severity, chiefComplaintText);
+
+    const bpString = (vitalsState.systolic !== null && vitalsState.diastolic !== null)
+      ? `${vitalsState.systolic}/${vitalsState.diastolic}`
+      : undefined;
 
     const payload = {
       intakeId: intakeId,
@@ -464,13 +505,20 @@ $('btnUploadOCR').addEventListener(
       ocrDocuments: ocrDocuments,
       
       vitals: {
-        bloodPressure: {
-          systolic: { value: vitalsState.systolic, unit: 'mmHg', provenanceMeta: { provenance: 'device-captured', confidence: 0.99, timestamp } },
-          diastolic: { value: vitalsState.diastolic, unit: 'mmHg', provenanceMeta: { provenance: 'device-captured', confidence: 0.99, timestamp } }
-        },
-        spo2: { value: vitalsState.spo2, unit: '%', provenanceMeta: { provenance: 'device-captured', confidence: 0.98, timestamp } },
-        heartRate: { value: vitalsState.heartRate, unit: 'bpm', provenanceMeta: { provenance: 'device-captured', confidence: 0.99, timestamp } },
-        bloodGlucose: { value: vitalsState.bloodGlucose, unit: 'mg/dL', provenanceMeta: { provenance: 'device-captured', confidence: 0.96, timestamp } }
+        bloodPressure: (vitalsState.systolic !== null && vitalsState.diastolic !== null) ? {
+          systolic: { value: vitalsState.systolic, unit: 'mmHg', provenanceMeta: { provenance: vitalsState.provenance.bp, confidence: vitalsState.provenance.bp === 'device-captured' ? 0.99 : 0.95, timestamp } },
+          diastolic: { value: vitalsState.diastolic, unit: 'mmHg', provenanceMeta: { provenance: vitalsState.provenance.bp, confidence: vitalsState.provenance.bp === 'device-captured' ? 0.99 : 0.95, timestamp } }
+        } : undefined,
+        spo2: vitalsState.spo2 !== null ? { value: vitalsState.spo2, unit: '%', provenanceMeta: { provenance: vitalsState.provenance.spo2, confidence: vitalsState.provenance.spo2 === 'device-captured' ? 0.98 : 0.95, timestamp } } : undefined,
+        heartRate: vitalsState.heartRate !== null ? { value: vitalsState.heartRate, unit: 'bpm', provenanceMeta: { provenance: vitalsState.provenance.spo2, confidence: vitalsState.provenance.spo2 === 'device-captured' ? 0.99 : 0.95, timestamp } } : undefined,
+        bloodGlucose: vitalsState.bloodGlucose !== null ? { value: vitalsState.bloodGlucose, unit: 'mg/dL', provenanceMeta: { provenance: vitalsState.provenance.glucose, confidence: vitalsState.provenance.glucose === 'device-captured' ? 0.96 : 0.95, timestamp } } : undefined,
+        // Flat aliases to guarantee compatibility across all consumers
+        bp: bpString,
+        systolic: vitalsState.systolic !== null ? vitalsState.systolic : undefined,
+        diastolic: vitalsState.diastolic !== null ? vitalsState.diastolic : undefined,
+        hr: vitalsState.heartRate !== null ? vitalsState.heartRate : undefined,
+        glucose: vitalsState.bloodGlucose !== null ? vitalsState.bloodGlucose : undefined,
+        bloodSugar: vitalsState.bloodGlucose !== null ? `${vitalsState.bloodGlucose} mg/dL` : undefined
       },
       chiefComplaints: [
         {

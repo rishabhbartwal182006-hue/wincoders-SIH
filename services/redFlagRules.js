@@ -14,7 +14,7 @@
  * Decision-support rules designed for clinical safety and triage prioritization.
  */
 
-const { interpretVitals, getAltitudeProfile, hasDangerSymptoms } = require('./altitudeAdjustmentService');
+const { evaluateAltitudeExposure, hasDangerSymptoms } = require('./altitudeRiskService');
 
 /**
  * Extracts a specific vital reading from session vitals array or object.
@@ -38,8 +38,22 @@ function latestVital(vitals, type) {
 }
 
 /**
- * Normalizes all vital signs from multiple possible client formats
- * (flat object, nested kiosk object, array of VitalReading, or string inputs).
+ * Helper to ensure empty strings or non-numbers are undefined.
+ */
+function toValidNumber(val) {
+  if (val === undefined || val === null) return undefined;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed === '') return undefined;
+    const num = Number(trimmed);
+    return !isNaN(num) ? num : undefined;
+  }
+  const num = Number(val);
+  return !isNaN(num) ? num : undefined;
+}
+
+/**
+ * Normalizes vital signs from various payload shapes into clean numbers.
  */
 function normalizePatientVitals(rawVitals) {
   if (!rawVitals) return {};
@@ -47,63 +61,68 @@ function normalizePatientVitals(rawVitals) {
   let systolic, diastolic, spo2, heartRate, bloodGlucose, temperature;
 
   if (Array.isArray(rawVitals)) {
-    systolic = latestVital(rawVitals, 'bp_systolic')?.value;
-    diastolic = latestVital(rawVitals, 'bp_diastolic')?.value;
-    spo2 = latestVital(rawVitals, 'spo2')?.value;
-    heartRate = latestVital(rawVitals, 'heart_rate')?.value || latestVital(rawVitals, 'pulse')?.value;
-    bloodGlucose = latestVital(rawVitals, 'blood_glucose')?.value || latestVital(rawVitals, 'glucose')?.value;
-    temperature = latestVital(rawVitals, 'temperature')?.value;
+    systolic = toValidNumber(latestVital(rawVitals, 'bp_systolic')?.value);
+    diastolic = toValidNumber(latestVital(rawVitals, 'bp_diastolic')?.value);
+    spo2 = toValidNumber(latestVital(rawVitals, 'spo2')?.value);
+    heartRate = toValidNumber(latestVital(rawVitals, 'heart_rate')?.value || latestVital(rawVitals, 'pulse')?.value);
+    bloodGlucose = toValidNumber(latestVital(rawVitals, 'blood_glucose')?.value || latestVital(rawVitals, 'glucose')?.value);
+    temperature = toValidNumber(latestVital(rawVitals, 'temperature')?.value);
   } else if (typeof rawVitals === 'object') {
     // Nested kiosk format (payload.vitals.bloodPressure.systolic.value)
     if (rawVitals.bloodPressure?.systolic?.value !== undefined) {
-      systolic = Number(rawVitals.bloodPressure.systolic.value);
-      diastolic = Number(rawVitals.bloodPressure.diastolic?.value);
+      systolic = toValidNumber(rawVitals.bloodPressure.systolic.value);
+      diastolic = toValidNumber(rawVitals.bloodPressure.diastolic?.value);
     }
     if (rawVitals.spo2?.value !== undefined) {
-      spo2 = Number(rawVitals.spo2.value);
+      spo2 = toValidNumber(rawVitals.spo2.value);
     }
     if (rawVitals.heartRate?.value !== undefined) {
-      heartRate = Number(rawVitals.heartRate.value);
+      heartRate = toValidNumber(rawVitals.heartRate.value);
     }
     if (rawVitals.bloodGlucose?.value !== undefined) {
-      bloodGlucose = Number(rawVitals.bloodGlucose.value);
+      bloodGlucose = toValidNumber(rawVitals.bloodGlucose.value);
     }
     if (rawVitals.temperature?.value !== undefined) {
-      temperature = Number(rawVitals.temperature.value);
+      temperature = toValidNumber(rawVitals.temperature.value);
     }
 
     // Direct numbers or strings
-    if (systolic === undefined && rawVitals.systolic !== undefined) systolic = Number(rawVitals.systolic);
-    if (diastolic === undefined && rawVitals.diastolic !== undefined) diastolic = Number(rawVitals.diastolic);
-    if (spo2 === undefined && rawVitals.spo2 !== undefined) spo2 = Number(rawVitals.spo2);
+    if (systolic === undefined && rawVitals.systolic !== undefined) systolic = toValidNumber(rawVitals.systolic);
+    if (diastolic === undefined && rawVitals.diastolic !== undefined) diastolic = toValidNumber(rawVitals.diastolic);
+    if (spo2 === undefined && rawVitals.spo2 !== undefined) spo2 = toValidNumber(rawVitals.spo2);
     if (heartRate === undefined && (rawVitals.heartRate !== undefined || rawVitals.heart_rate !== undefined || rawVitals.pulse !== undefined)) {
-      heartRate = Number(rawVitals.heartRate ?? rawVitals.heart_rate ?? rawVitals.pulse);
+      heartRate = toValidNumber(rawVitals.heartRate ?? rawVitals.heart_rate ?? rawVitals.pulse);
     }
     if (bloodGlucose === undefined && (rawVitals.bloodGlucose !== undefined || rawVitals.bloodSugar !== undefined || rawVitals.glucose !== undefined)) {
       const gRaw = rawVitals.bloodGlucose ?? rawVitals.bloodSugar ?? rawVitals.glucose;
-      bloodGlucose = typeof gRaw === 'string' ? parseFloat(gRaw.replace(/[^\d.]/g, '')) : Number(gRaw);
+      if (typeof gRaw === 'string') {
+        const cleaned = gRaw.replace(/[^\d.]/g, '');
+        bloodGlucose = cleaned !== '' ? parseFloat(cleaned) : undefined;
+      } else {
+        bloodGlucose = toValidNumber(gRaw);
+      }
     }
     if (temperature === undefined && rawVitals.temperature !== undefined) {
-      temperature = Number(rawVitals.temperature);
+      temperature = toValidNumber(rawVitals.temperature);
     }
 
     // BP string format like "120/80" or "185 / 105"
     if ((systolic === undefined || isNaN(systolic)) && typeof rawVitals.bp === 'string') {
       const match = rawVitals.bp.match(/(\d+)\s*[/]\s*(\d+)/);
       if (match) {
-        systolic = Number(match[1]);
-        diastolic = Number(match[2]);
+        systolic = toValidNumber(match[1]);
+        diastolic = toValidNumber(match[2]);
       }
     }
   }
 
   return {
-    systolic: !isNaN(systolic) ? systolic : undefined,
-    diastolic: !isNaN(diastolic) ? diastolic : undefined,
-    spo2: !isNaN(spo2) ? spo2 : undefined,
-    heartRate: !isNaN(heartRate) ? heartRate : undefined,
-    bloodGlucose: !isNaN(bloodGlucose) ? bloodGlucose : undefined,
-    temperature: !isNaN(temperature) ? temperature : undefined
+    systolic: systolic !== undefined && !isNaN(systolic) ? systolic : undefined,
+    diastolic: diastolic !== undefined && !isNaN(diastolic) ? diastolic : undefined,
+    spo2: spo2 !== undefined && !isNaN(spo2) ? spo2 : undefined,
+    heartRate: heartRate !== undefined && !isNaN(heartRate) ? heartRate : undefined,
+    bloodGlucose: bloodGlucose !== undefined && !isNaN(bloodGlucose) ? bloodGlucose : undefined,
+    temperature: temperature !== undefined && !isNaN(temperature) ? temperature : undefined
   };
 }
 
@@ -170,10 +189,14 @@ function detectRedFlags(sessionOrPatient) {
 
   const textCorpus = extractAllTextCorpus(sessionOrPatient);
   const vitals = normalizePatientVitals(sessionOrPatient.vitals);
+  const envAlt = sessionOrPatient.environment?.altitudeMeters ??
+                 sessionOrPatient.altitudeContext?.facilityAltitudeM ??
+                 process.env.FACILITY_ALTITUDE_METERS;
+  const facilityAlt = (envAlt !== undefined && envAlt !== null && envAlt !== '' && !isNaN(Number(envAlt)))
+    ? Number(envAlt)
+    : null;
+  const isHighAltitude = facilityAlt !== null && facilityAlt >= 2450;
 
-  const altitudeMeters = sessionOrPatient.environment?.altitudeMeters ?? 2438;
-  const profile = getAltitudeProfile(altitudeMeters);
-  const expectedMinSpO2 = profile.spo2Expected[0];
 
   // Helper to push a red flag
   const addFlag = (flagType, urgencyTier, reason, metadata = {}) => {
@@ -294,13 +317,14 @@ function detectRedFlags(sessionOrPatient) {
     );
   }
 
-  // SpO2 Altitude-Adjusted Evaluation
+  // SpO2 Clinical Respiratory Evaluation (Raw Vitals Only)
+
   if (typeof vitals.spo2 === 'number') {
-    if (vitals.spo2 < expectedMinSpO2 - 5) {
+    if (vitals.spo2 < 85) {
       addFlag(
-        'severe_hypoxia',
+        'critical_severe_hypoxemia',
         'critical',
-        `Critical Hypoxemia at Altitude: SpO2 (${vitals.spo2}%) is more than 5% below minimum expected (${expectedMinSpO2}%) for ${altitudeMeters}m.`
+        `Critical Severe Hypoxemia: SpO2 is dangerously low (${vitals.spo2}% < 85%). High risk of impending respiratory failure; immediate oxygenation and resuscitation evaluation required.`
       );
     } else if (vitals.spo2 < 90) {
       addFlag(
@@ -308,19 +332,23 @@ function detectRedFlags(sessionOrPatient) {
         'critical',
         `Critical Hypoxemia: SpO2 is dangerously low (${vitals.spo2}% < 90%). High risk of acute respiratory decompensation.`
       );
-    } else if (vitals.spo2 < expectedMinSpO2 && hasDangerSymptoms(textCorpus)) {
-      addFlag(
-        'altitude_hypoxemia_danger_symptoms',
-        'critical',
-        `Altitude Hypoxemia with Danger Symptoms: SpO2 (${vitals.spo2}%) below baseline with active high-risk clinical symptoms.`
-      );
-    } else if (vitals.spo2 < expectedMinSpO2 || (altitudeMeters <= 1500 && vitals.spo2 < 94)) {
-      addFlag(
-        'moderate_hypoxemia',
-        'urgent',
-        `Moderate Hypoxemia: SpO2 (${vitals.spo2}%) is below optimal target (expected min ${expectedMinSpO2}% at ${altitudeMeters}m). Priority oxygenation assessment required.`
-      );
+    } else if (vitals.spo2 < 94) {
+      // At high altitude (>= 2450m), 90-93% without symptoms is typical baseline per WMS/CDC.
+      // At standard elevation (< 2450m) or if respiratory symptoms exist, flag as moderate hypoxemia.
+      if (!isHighAltitude || hasDyspnea) {
+        addFlag(
+          'moderate_hypoxemia',
+          'urgent',
+          `Moderate Hypoxemia: SpO2 (${vitals.spo2}%) is sub-optimal (90-93%). Expedited clinical evaluation and respiratory monitoring required.`
+        );
+      }
     }
+  } else if (hasDyspnea) {
+    addFlag(
+      'respiratory_distress_unmeasured_vitals',
+      'urgent',
+      'Acute dyspnea / respiratory distress reported with unmeasured hardware vitals: Immediate bedside pulse oximetry required.'
+    );
   }
 
   // =========================================================================
@@ -476,7 +504,7 @@ function detectRedFlags(sessionOrPatient) {
   // =========================================================================
   // 8. HIGH ALTITUDE (AMS / HAPE / HACE)
   // =========================================================================
-  if (altitudeMeters > 2500) {
+  if (isHighAltitude) {
     const hasHeadache = textCorpus.includes('headache') || textCorpus.includes('सिर');
     const hasNausea = textCorpus.includes('nausea') || textCorpus.includes('vomit') || textCorpus.includes('उल्टी');
     const hasDizziness = textCorpus.includes('dizzy') || textCorpus.includes('giddiness') || textCorpus.includes('चक्कर');
@@ -486,7 +514,7 @@ function detectRedFlags(sessionOrPatient) {
       addFlag(
         'possible_acute_mountain_sickness',
         'urgent',
-        `Possible Acute Mountain Sickness (AMS) at ${altitudeMeters}m based on headache and systemic symptoms. Lake Louise score screening advised.`
+        `Acute Mountain Sickness (AMS) Clinical Pattern at ${facilityAlt}m: Headache with compatible symptoms after recent ascent.`
       );
     }
   }
@@ -547,6 +575,43 @@ function matchRoutineIllness(textCorpus) {
  */
 function evaluateMultiSystemTriage(sessionOrPatient) {
   const flags = detectRedFlags(sessionOrPatient);
+  const sessionId = sessionOrPatient.session_id || sessionOrPatient.sessionId || sessionOrPatient.patientId || `PT-${Date.now()}`;
+
+  // Synthesize Altitude Context & Pattern Recognition
+  const altitudeEval = evaluateAltitudeExposure(sessionOrPatient);
+  if (altitudeEval.patternsDetected.includes('HACE_CONSIDERATION') && !flags.some(f => f.flag_type === 'altitude_hace_consideration')) {
+    flags.push({
+      flag_id: `FLAG-${sessionId}-HACE-${Date.now()}`,
+      flag_type: 'altitude_hace_consideration',
+      urgency_tier: 'critical',
+      detected_at: new Date(),
+      status: 'active',
+      reason: 'High-Altitude Cerebral Edema (HACE) Consideration: Acute neurological findings / ataxia following recent ascent. Emergent descent and medical evaluation required.'
+    });
+  }
+
+  if (altitudeEval.patternsDetected.includes('HAPE_CONSIDERATION') && !flags.some(f => f.flag_type === 'altitude_hape_consideration')) {
+    flags.push({
+      flag_id: `FLAG-${sessionId}-HAPE-${Date.now()}`,
+      flag_type: 'altitude_hape_consideration',
+      urgency_tier: 'critical',
+      detected_at: new Date(),
+      status: 'active',
+      reason: 'High-Altitude Pulmonary Edema (HAPE) Consideration: Respiratory symptoms and marked hypoxemia in an unacclimatized patient. Urgent physician evaluation required.'
+    });
+  }
+
+  if (altitudeEval.patternsDetected.includes('AMS_CONTEXT') && !flags.some(f => f.flag_type === 'altitude_ams_context')) {
+    flags.push({
+      flag_id: `FLAG-${sessionId}-AMS-${Date.now()}`,
+      flag_type: 'altitude_ams_context',
+      urgency_tier: 'urgent',
+      detected_at: new Date(),
+      status: 'active',
+      reason: 'Acute Mountain Sickness (AMS) Clinical Pattern: Headache with compatible symptoms (nausea, dizziness, fatigue) after recent ascent. Symptomatic care and monitoring required.'
+    });
+  }
+
   const criticalFlags = flags.filter(f => f.urgency_tier === 'critical');
   const urgentFlags = flags.filter(f => f.urgency_tier === 'urgent');
 
@@ -596,6 +661,7 @@ function evaluateMultiSystemTriage(sessionOrPatient) {
     matchedRoutineCondition: matchedRoutine,
     redFlags: flags,
     redFlagCount: flags.length,
+    altitudeContext: altitudeEval,
     timestamp: new Date().toISOString()
   };
 }

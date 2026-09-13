@@ -552,6 +552,7 @@
           chiefComplaint: Array.isArray(item.symptoms) ? item.symptoms.join(", ") : (item.symptoms || "General intake"),
           symptoms: Array.isArray(item.symptoms) ? item.symptoms : [item.symptoms],
           vitals: item.vitals || {},
+          altitudeContext: item.altitudeContext || null,
           redFlags: item.redFlags || [],
           rules: (item.redFlags || []).map(r => r.reason || r.flag_type || r),
           createdAt: item.timestamp || new Date().toISOString()
@@ -685,7 +686,8 @@
     rules,
     vitals: normalizeVitals(session?.vitals || session?.latestVitals || {}),
     rawVitals: session?.vitals || session?.latestVitals || {},
-    environment: session?.environment || { altitudeMeters: 2438, altitudeFeet: 8000, altitudeSource: 'facility_config', acclimatizationStatus: 'unacclimatized' },
+    altitudeContext: session?.altitudeContext || session?.triageResult?.altitudeContext || null,
+    environment: session?.environment || null,
     subjective: session?.subjective || session?.hpi?.narrative || session?.intake?.hpi || "",
     objective: session?.objective || "",
     assessment: session?.assessment || "",
@@ -774,24 +776,25 @@
 
   if (bpReading) {
     if (typeof bpReading === "string") {
-      bp = bpReading;
+      bp = bpReading.includes("undefined") ? "" : bpReading;
     } else {
       const raw = bpReading.value !== undefined ? bpReading.value : bpReading;
       if (typeof raw === "string") {
-        bp = raw;
+        bp = raw.includes("undefined") ? "" : raw;
       } else if (raw) {
-        bp = formatBP(
-          raw?.systolic ?? raw?.systolicBP ?? v.systolicBP,
-          raw?.diastolic ?? raw?.diastolicBP ?? v.diastolicBP
-        );
+        const sys = scalar(raw?.systolic) || scalar(raw?.systolicBP) || scalar(v.systolicBP) || scalar(v.systolic);
+        const dia = scalar(raw?.diastolic) || scalar(raw?.diastolicBP) || scalar(v.diastolicBP) || scalar(v.diastolic);
+        bp = formatBP(sys, dia);
       }
     }
+  } else if (v.systolic !== undefined && v.diastolic !== undefined) {
+    bp = formatBP(scalar(v.systolic), scalar(v.diastolic));
   }
 
   const hr = scalar(byType("HEART_RATE") || v.heartRate || v.heart_rate || v.hr || v.pulse);
   const spo2 = scalar(byType("SPO2") || v.spo2 || v.SpO2 || v.oxygenSaturation);
   const temp = scalar(byType("TEMPERATURE") || v.temperature || v.temp);
-  const glucose = scalar(byType("BLOOD_GLUCOSE") || v.bloodGlucose || v.blood_glucose || v.glucose);
+  const glucose = scalar(byType("BLOOD_GLUCOSE") || v.bloodGlucose || v.blood_glucose || v.bloodSugar || v.blood_sugar || v.glucose);
 
   return {
     bp: bp || "—",
@@ -803,7 +806,7 @@
 }
 
   function formatBP(systolic, diastolic) {
-    if (systolic == null || diastolic == null) {
+    if (systolic == null || diastolic == null || String(systolic).includes("undefined") || String(diastolic).includes("undefined")) {
       return "";
     }
 
@@ -1212,6 +1215,14 @@
       value === "" ||
       (Array.isArray(value) && value.length === 0) ||
       (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0);
+
+    if (key === "vitals" && patient.vitals && typeof value === "object") {
+      const freshHasReal = Object.values(value || {}).some((v) => v && v !== "—");
+      if (!freshHasReal) return;
+      patient.vitals = { ...patient.vitals, ...value };
+      return;
+    }
+
     if (!empty) patient[key] = value;
   });
 }
@@ -1437,101 +1448,40 @@
      VITALS & ALTITUDE DECISION-SUPPORT CARDS
   =========================================================== */
 
-  function renderVitals(patient) {
-    const vitals = patient.vitals || {};
-    const env = patient.environment || {
-      altitudeMeters: 2438,
-      altitudeFeet: 8000,
-      altitudeSource: 'facility_config',
-      acclimatizationStatus: 'unacclimatized'
-    };
-
-    const altMeters = env.altitudeMeters ?? 2438;
-    const altFeet = env.altitudeFeet ?? Math.round(altMeters * 3.28084);
-    const altSource = env.altitudeSource || 'facility_config';
-    const acclim = env.acclimatizationStatus || 'unacclimatized';
-
-    // Altitude expected bands
-    let spo2Range = [92, 97];
-    let hrDelta = [5, 15];
-    let bandName = "High (1500–2500 m)";
-
-    if (altMeters < 500) {
-      spo2Range = [95, 100];
-      hrDelta = [0, 5];
-      bandName = "Sea level (0–500 m)";
-    } else if (altMeters < 1500) {
-      spo2Range = [94, 99];
-      hrDelta = [2, 10];
-      bandName = "Moderate (500–1500 m)";
-    } else if (altMeters < 2500) {
-      spo2Range = [92, 97];
-      hrDelta = [5, 15];
-      bandName = "High (1500–2500 m)";
-    } else if (altMeters < 3500) {
-      spo2Range = [90, 95];
-      hrDelta = [10, 20];
-      bandName = "Very high (2500–3500 m)";
-    } else {
-      spo2Range = [85, 92];
-      hrDelta = [15, 30];
-      bandName = "Extreme (3500–6000 m)";
+  function renderAltitudeContextBanner(patient) {
+    const ac = patient.altitudeContext;
+    if (!ac || ac.altitudeContext === 'NONE' || ac.altitudeContext === 'UNAVAILABLE') {
+      return '';
     }
 
-    const spo2Num = parseFloat(vitals.spo2);
-    let spo2Interp = "Normal baseline for altitude";
-    let spo2BadgeClass = "badge-normal";
-    let spo2IsRedFlag = false;
-
-    if (!isNaN(spo2Num)) {
-      if (spo2Num < spo2Range[0] - 5) {
-        spo2Interp = `Severe hypoxemia (>5% below expected ${spo2Range[0]}-${spo2Range[1]}%)`;
-        spo2BadgeClass = "badge-critical";
-        spo2IsRedFlag = true;
-      } else if (spo2Num < spo2Range[0]) {
-        spo2Interp = `Below expected altitude range (${spo2Range[0]}-${spo2Range[1]}%). Critical with breathlessness`;
-        spo2BadgeClass = "badge-warning";
-        const hasDanger = (patient.symptoms || []).some(s => /chest|breath|shortness|dizzy/.test(String(s).toLowerCase()));
-        if (hasDanger) spo2IsRedFlag = true;
-      }
-    }
-
-    // BP evaluation
-    let bpInterp = "Normal. No altitude adjustment applied to BP threshold.";
-    let bpIsRedFlag = false;
-    let bpBadgeClass = "badge-normal";
-    if (vitals.bp && vitals.bp.includes("/")) {
-      const parts = vitals.bp.split("/");
-      const sys = parseInt(parts[0], 10);
-      const dia = parseInt(parts[1], 10);
-      if (sys >= 180 || dia >= 120) {
-        bpInterp = "Hypertensive crisis (Systolic >= 180 or Diastolic >= 120 mmHg). Unchanged by elevation.";
-        bpIsRedFlag = true;
-        bpBadgeClass = "badge-critical";
-      } else if (sys >= 160 || dia >= 100) {
-        bpInterp = "Stage 2 Hypertension. Unchanged by elevation.";
-        bpBadgeClass = "badge-warning";
-      }
-    }
-
-    // HR evaluation
-    const hrNum = parseFloat(vitals.hr);
-    const hrBandMin = 60 + hrDelta[0];
-    const hrBandMax = 100 + hrDelta[1];
-    let hrInterp = `Heart rate within compensatory baseline for altitude (${hrBandMin}–${hrBandMax} bpm).`;
-    if (!isNaN(hrNum) && hrNum > hrBandMax) {
-      hrInterp = "Heart rate above compensatory baseline for altitude — evaluate for altitude-related stress.";
-    }
-    const hasHrDeltaApplied = altMeters >= 500 && (hrDelta[0] > 0 || hrDelta[1] > 0);
+    const isSignificant = ac.altitudeContext === 'SIGNIFICANT';
+    const patterns = Array.isArray(ac.patternsDetected) ? ac.patternsDetected.join(', ') : '';
+    const reasons = Array.isArray(ac.reasons) ? ac.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('') : '';
 
     return `
-      <div class="altitude-disclaimer-banner" style="background: #fff8e1; border: 1px solid #ffe082; color: #795548; padding: 8px 14px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
-        <span><strong>⚠️ Decision-support MVP:</strong> Illustrative altitude profiles. Raw values preserved. Clinician sign-off required. Pilot validation needed.</span>
-        <button id="override-altitude-btn" type="button" style="background: #00796b; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;">
-          ⚙ Override Altitude
-        </button>
+      <div style="margin-top: 14px; margin-bottom: 16px; padding: 14px 18px; border-radius: 8px; background: ${isSignificant ? '#fef2f2' : '#f0f9ff'}; border: 1px solid ${isSignificant ? '#fecaca' : '#bae6fd'}; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 16px;">🏔️</span>
+            <strong style="font-size: 14px; color: ${isSignificant ? '#991b1b' : '#0369a1'};">
+              Altitude Clinical Context (${ac.exposure?.facilityAltitudeM ?? 'High'} m) — ${escapeHtml(ac.altitudeContext)}
+            </strong>
+          </div>
+          ${patterns ? `<span style="font-size: 11px; padding: 3px 10px; border-radius: 12px; background: ${isSignificant ? '#fee2e2' : '#e0f2fe'}; color: ${isSignificant ? '#991b1b' : '#0284c7'}; font-weight: 700;">${escapeHtml(patterns)}</span>` : ''}
+        </div>
+        <p style="font-size: 12.5px; color: #1e293b; font-weight: 500; margin: 0 0 8px 0; line-height: 1.4;">${escapeHtml(ac.clinicalAdvisory || '')}</p>
+        ${reasons ? `<ul style="font-size: 11.5px; color: #475569; margin: 0 0 8px 0; padding-left: 20px; line-height: 1.5;">${reasons}</ul>` : ''}
+        <div style="font-size: 11px; color: #64748b; border-top: 1px dashed ${isSignificant ? '#fca5a5' : '#cbd5e1'}; padding-top: 6px; margin-top: 6px;">
+          ⚠️ <em>CDC/WMS Invariant:</em> Altitude provides clinical context; measured vitals & symptoms govern triage severity. Altitude never excuses severe hypoxemia or respiratory distress.
+        </div>
       </div>
+    `;
+  }
 
+  function renderVitals(patient) {
+    const vitals = patient.vitals || {};
+
+    return `
       <div class="vitals-strip" style="margin-bottom: 14px;">
         ${renderVital("BP", vitals.bp, "mmHg")}
         ${renderVital("Heart rate", vitals.hr, "bpm")}
@@ -1539,71 +1489,7 @@
         ${renderVital("Temperature", vitals.temp, "°C")}
         ${renderVital("Glucose", vitals.glucose, "mg/dL")}
       </div>
-
-      <!-- Altitude-Aware Context Cards Grid -->
-      <div class="altitude-cards-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 16px;">
-
-        <!-- SpO2 Altitude Card -->
-        <div class="vital-detail-card" style="background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; border-top: 3px solid ${spo2IsRedFlag ? '#d32f2f' : '#00897b'};">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong style="font-size: 13px; color: #37474f;">Oxygen Saturation (SpO₂)</strong>
-            <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: ${spo2IsRedFlag ? '#ffebee' : '#e8f5e9'}; color: ${spo2IsRedFlag ? '#c62828' : '#2e7d32'}; font-weight: bold;">
-              ${spo2IsRedFlag ? 'RED FLAG — fast-track' : 'EVALUATED'}
-            </span>
-          </div>
-          <div style="font-size: 18px; font-weight: 700; color: #263238; margin-bottom: 4px;">
-            ${escapeHtml(String(vitals.spo2 || '—'))}% <span style="font-size: 11px; color: #78909c; font-weight: normal;">[RAW]</span>
-          </div>
-          <div style="font-size: 11.5px; color: #546e7a; line-height: 1.5;">
-            <div>• <strong>Altitude:</strong> ${altMeters} m (${altFeet} ft) — <em>${escapeHtml(altSource)}</em></div>
-            <div>• <strong>Expected at altitude:</strong> ${spo2Range[0]}–${spo2Range[1]}% (${bandName})</div>
-            <div>• <strong>Interpretation:</strong> ${escapeHtml(spo2Interp)}</div>
-            <div>• <strong>Provenance:</strong> device-reading, confidence 0.99</div>
-            <div>• <strong>Algorithm:</strong> altitude-mvp-v1</div>
-          </div>
-        </div>
-
-        <!-- Blood Pressure Altitude Card -->
-        <div class="vital-detail-card" style="background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; border-top: 3px solid ${bpIsRedFlag ? '#d32f2f' : '#1976d2'};">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong style="font-size: 13px; color: #37474f;">Blood Pressure (BP)</strong>
-            <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: ${bpIsRedFlag ? '#ffebee' : '#e3f2fd'}; color: ${bpIsRedFlag ? '#c62828' : '#1565c0'}; font-weight: bold;">
-              ${bpIsRedFlag ? 'HYPERTENSIVE CRISIS' : 'STANDARD THRESHOLD'}
-            </span>
-          </div>
-          <div style="font-size: 18px; font-weight: 700; color: #263238; margin-bottom: 4px;">
-            ${escapeHtml(String(vitals.bp || '—'))} <span style="font-size: 11px; color: #78909c; font-weight: normal;">mmHg [RAW]</span>
-          </div>
-          <div style="font-size: 11.5px; color: #546e7a; line-height: 1.5;">
-            <div>• <strong>Altitude:</strong> ${altMeters} m (${altFeet} ft)</div>
-            <div>• <strong>Expected standard:</strong> 90–120 / 60–80 mmHg</div>
-            <div>• <strong>Interpretation:</strong> ${escapeHtml(bpInterp)}</div>
-            <div>• <strong>Invariant Rule:</strong> BP normal range not shifted upward for altitude</div>
-            <div>• <strong>Algorithm:</strong> altitude-mvp-v1</div>
-          </div>
-        </div>
-
-        <!-- Heart Rate Altitude Card -->
-        <div class="vital-detail-card" style="background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; border-top: 3px solid #7b1fa2;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong style="font-size: 13px; color: #37474f;">Heart Rate (HR)</strong>
-            ${hasHrDeltaApplied ? '<span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #f3e5f5; color: #6a1b9a; font-weight: bold;">ALTITUDE DELTA</span>' : ''}
-
-
-          </div>
-          <div style="font-size: 18px; font-weight: 700; color: #263238; margin-bottom: 4px;">
-            ${escapeHtml(String(vitals.hr || '—'))} <span style="font-size: 11px; color: #78909c; font-weight: normal;">bpm [RAW]</span>
-          </div>
-          <div style="font-size: 11.5px; color: #546e7a; line-height: 1.5;">
-            <div>• <strong>Altitude:</strong> ${altMeters} m</div>
-            <div>• <strong>Compensatory baseline:</strong> ${60 + hrDelta[0]}–${100 + hrDelta[1]} bpm (+${hrDelta[1]} bpm)</div>
-            <div>• <strong>Interpretation:</strong> ${escapeHtml(hrInterp)}</div>
-            <div>• <strong>Acclimatization:</strong> ${escapeHtml(acclim)}</div>
-            <div>• <strong>Algorithm:</strong> altitude-mvp-v1</div>
-          </div>
-        </div>
-
-      </div>
+      ${renderAltitudeContextBanner(patient)}
     `;
   }
 

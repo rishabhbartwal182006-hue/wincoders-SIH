@@ -39,10 +39,32 @@ function App() {
   const [ocrError, setOcrError] = useState("");
   const [ocrResult, setOcrResult] = useState(null);
   const [altitudeMode, setAltitudeMode] = useState("facility_config");
-  const [altitudeMeters, setAltitudeMeters] = useState("2438");
+  const [altitudeMeters, setAltitudeMeters] = useState("");
   const [staffPin, setStaffPin] = useState("");
+  const [usualSleepingAltitudeM, setUsualSleepingAltitudeM] = useState("200");
+  const [arrivalHours, setArrivalHours] = useState("12");
+  const [isResident, setIsResident] = useState(false);
   const [showNovaModal, setShowNovaModal] = useState(false);
   const [reviewEditMode, setReviewEditMode] = useState(false);
+
+  // Fetch facility altitude config from backend
+  useEffect(() => {
+    const configUrl = (window.location.hostname === 'localhost' && window.location.port === '5173')
+      ? 'http://localhost:4000/api/v1/facility/config'
+      : '/api/v1/facility/config';
+    fetch(configUrl)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.facilityAltitudeM !== null && data.facilityAltitudeM !== undefined) {
+          setAltitudeMeters(String(data.facilityAltitudeM));
+        } else {
+          setAltitudeMeters("");
+        }
+      })
+      .catch(() => {
+        setAltitudeMeters("");
+      });
+  }, []);
 
   const [patient, setPatient] = useState({
     name: "",
@@ -317,20 +339,30 @@ function App() {
         hasRedFlag: hasRedFlag
       },
       hasRedFlag: hasRedFlag,
+      altitudeContext: {
+        facilityAltitudeM: altitudeMeters && !isNaN(Number(altitudeMeters)) ? Number(altitudeMeters) : null,
+        exposure: {
+          usualSleepingAltitudeM: isResident ? (Number(altitudeMeters) || 200) : (Number(usualSleepingAltitudeM) || 200),
+          currentSleepingAltitudeM: altitudeMeters && !isNaN(Number(altitudeMeters)) ? Number(altitudeMeters) : undefined,
+          hoursAtCurrentAltitude: isResident ? undefined : (Number(arrivalHours) || undefined),
+          highestSleepingAltitudeLast14DaysM: isResident ? (Number(altitudeMeters) || 200) : (Number(usualSleepingAltitudeM) || 200),
+          isLongTermResident: isResident
+        }
+      },
       environment: {
-        altitudeMeters: Number(altitudeMeters) || 2438,
-        altitudeFeet: Math.round((Number(altitudeMeters) || 2438) * 3.28084),
+        altitudeMeters: altitudeMeters && !isNaN(Number(altitudeMeters)) ? Number(altitudeMeters) : null,
         altitudeSource: altitudeMode,
-        altitudeConfidence: 1,
-        timeAtAltitudeHours: 2,
-        residenceAltitudeMeters: 200,
-        acclimatizationStatus: "unacclimatized"
+        timeAtAltitudeHours: isResident ? undefined : (Number(arrivalHours) || undefined),
+        residenceAltitudeMeters: isResident ? (Number(altitudeMeters) || 200) : (Number(usualSleepingAltitudeM) || 200),
+        acclimatizationStatus: isResident ? "resident" : (Number(arrivalHours) <= 120 ? "acute_exposure" : "extended")
       },
       vitals: {
-        bp: vitals.bp || "120/80",
-        spo2: vitals.spo2 || "98",
-        heartRate: vitals.heartRate || undefined,
-        bloodSugar: vitals.bloodSugar ? `${vitals.bloodSugar} mg/dL` : undefined
+        bp: vitals.bp && vitals.bp.trim() ? vitals.bp.trim() : undefined,
+        spo2: vitals.spo2 && vitals.spo2.trim() ? vitals.spo2.trim() : undefined,
+        heartRate: vitals.heartRate && vitals.heartRate.trim() ? vitals.heartRate.trim() : undefined,
+        hr: vitals.heartRate && vitals.heartRate.trim() ? vitals.heartRate.trim() : undefined,
+        bloodSugar: vitals.bloodSugar && vitals.bloodSugar.trim() ? `${vitals.bloodSugar.trim().replace(/[^\d.]/g, '')} mg/dL` : undefined,
+        bloodGlucose: vitals.bloodSugar && vitals.bloodSugar.trim() ? Number(vitals.bloodSugar.trim().replace(/[^\d.]/g, '')) : undefined
       }
     };
 
@@ -607,15 +639,63 @@ function App() {
             </div>
 
             <div className="field-block">
-              <label>{language === "हिन्दी" ? "ऊंचाई संदर्भ" : "Altitude context"}</label>
+              <label>{language === "हिन्दी" ? "सुविधा ऊंचाई संदर्भ" : "Facility Elevation Context"}</label>
               <select value={altitudeMode} onChange={(e) => setAltitudeMode(e.target.value)}>
-                <option value="facility_config">{language === "हिन्दी" ? "सुविधा डिफ़ॉल्ट: 2,438 मीटर" : "Facility default: 2,438 m"}</option>
+                <option value="facility_config">
+                  {altitudeMeters ? (language === "हिन्दी" ? `सुविधा ऊंचाई: ${altitudeMeters} मी` : `Facility Elevation: ${altitudeMeters} m`) : (language === "हिन्दी" ? "मानक ऊंचाई (अकॉन्फिगर)" : "Standard Elevation (Unconfigured)")}
+                </option>
                 <option value="staff_manual">{language === "हिन्दी" ? "स्टाफ़ मैन्युअल ओवरराइड" : "Staff manual override"}</option>
               </select>
               {altitudeMode === "staff_manual" && (
                 <div className="vitals-grid" style={{ marginTop: "10px" }}>
                   <input aria-label="Altitude in metres" value={altitudeMeters} onChange={(e) => setAltitudeMeters(e.target.value)} placeholder="Altitude (m)" />
                   <input aria-label="Staff override PIN" type="password" value={staffPin} onChange={(e) => setStaffPin(e.target.value)} placeholder={language === "हिन्दी" ? "स्टाफ़ PIN" : "Staff override PIN"} />
+                </div>
+              )}
+
+              {/* Objective Exposure Questions if Elevation >= 2,450 m */}
+              {altitudeMeters && Number(altitudeMeters) >= 2450 && (
+                <div style={{ marginTop: "14px", padding: "12px", background: "#f0f9ff", borderRadius: "8px", border: "1px solid #bae6fd" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 700, color: "#0369a1", display: "block", marginBottom: "6px" }}>
+                    {language === "हिन्दी" ? "ऊंचाई जोखिम संदर्भ (CDC / WMS)" : "Altitude Exposure Profile (CDC / WMS)"}
+                  </label>
+                  
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
+                    <button
+                      type="button"
+                      style={{ flex: 1, padding: "8px", borderRadius: "6px", border: isResident ? "2px solid #0284c7" : "1px solid #cbd5e1", background: isResident ? "#e0f2fe" : "#ffffff", fontWeight: isResident ? 700 : 500, fontSize: "12px", cursor: "pointer" }}
+                      onClick={() => setIsResident(true)}
+                    >
+                      {language === "हिन्दी" ? "स्थानीय निवासी" : "Local Resident"}
+                    </button>
+                    <button
+                      type="button"
+                      style={{ flex: 1, padding: "8px", borderRadius: "6px", border: !isResident ? "2px solid #0284c7" : "1px solid #cbd5e1", background: !isResident ? "#e0f2fe" : "#ffffff", fontWeight: !isResident ? 700 : 500, fontSize: "12px", cursor: "pointer" }}
+                      onClick={() => setIsResident(false)}
+                    >
+                      {language === "हिन्दी" ? "निचले क्षेत्र से यात्री" : "Traveler / Visitor"}
+                    </button>
+                  </div>
+
+                  {!isResident && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "11px", color: "#475569" }}>
+                        {language === "हिन्दी" ? "इस ऊंचाई पर आगमन समय:" : "Duration at this elevation:"}
+                      </span>
+                      <select
+                        value={arrivalHours}
+                        onChange={(e) => setArrivalHours(e.target.value)}
+                        style={{ padding: "6px 8px", fontSize: "12px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                      >
+                        <option value="6">&lt; 12 hours ago (acute exposure)</option>
+                        <option value="24">12 – 24 hours ago (acute exposure)</option>
+                        <option value="48">1 – 2 days ago (acute acclimatization window)</option>
+                        <option value="72">3 days ago</option>
+                        <option value="120">4 – 5 days ago</option>
+                        <option value="192">&gt; 1 week ago</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1426,7 +1506,7 @@ function App() {
                 <div><span>Gender</span><strong>{patient.gender || "Not entered"}</strong></div>
                 <div><span>Language</span><strong>{language}</strong></div>
                 <div><span>Mode</span><strong>{mode}</strong></div>
-                <div><span>Altitude</span><strong>{altitudeMeters || "2438"} m — {altitudeMode}</strong></div>
+                <div><span>Altitude</span><strong>{altitudeMeters ? `${altitudeMeters} m (${isResident ? 'Resident' : 'Traveler'})` : "Standard Elevation (Unconfigured)"}</strong></div>
                 <div><span>Symptoms</span><strong>{symptomList.length ? symptomList.join(", ") : "None reported"}</strong></div>
 
                 {symptomList.includes("Chest discomfort") && (

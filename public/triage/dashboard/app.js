@@ -552,6 +552,7 @@
           chiefComplaint: Array.isArray(item.symptoms) ? item.symptoms.join(", ") : (item.symptoms || "General intake"),
           symptoms: Array.isArray(item.symptoms) ? item.symptoms : [item.symptoms],
           vitals: item.vitals || {},
+          altitudeContext: item.altitudeContext || null,
           redFlags: item.redFlags || [],
           rules: (item.redFlags || []).map(r => r.reason || r.flag_type || r),
           createdAt: item.timestamp || new Date().toISOString()
@@ -684,6 +685,7 @@
     redFlags,
     rules,
     vitals: normalizeVitals(session?.vitals || session?.latestVitals || {}),
+    altitudeContext: session?.altitudeContext || session?.triageResult?.altitudeContext || null,
     subjective: session?.subjective || session?.hpi?.narrative || session?.intake?.hpi || "",
     objective: session?.objective || "",
     assessment: session?.assessment || "",
@@ -772,24 +774,25 @@
 
   if (bpReading) {
     if (typeof bpReading === "string") {
-      bp = bpReading;
+      bp = bpReading.includes("undefined") ? "" : bpReading;
     } else {
       const raw = bpReading.value !== undefined ? bpReading.value : bpReading;
       if (typeof raw === "string") {
-        bp = raw;
+        bp = raw.includes("undefined") ? "" : raw;
       } else if (raw) {
-        bp = formatBP(
-          raw?.systolic ?? raw?.systolicBP ?? v.systolicBP,
-          raw?.diastolic ?? raw?.diastolicBP ?? v.diastolicBP
-        );
+        const sys = scalar(raw?.systolic) || scalar(raw?.systolicBP) || scalar(v.systolicBP) || scalar(v.systolic);
+        const dia = scalar(raw?.diastolic) || scalar(raw?.diastolicBP) || scalar(v.diastolicBP) || scalar(v.diastolic);
+        bp = formatBP(sys, dia);
       }
     }
+  } else if (v.systolic !== undefined && v.diastolic !== undefined) {
+    bp = formatBP(scalar(v.systolic), scalar(v.diastolic));
   }
 
   const hr = scalar(byType("HEART_RATE") || v.heartRate || v.heart_rate || v.hr || v.pulse);
   const spo2 = scalar(byType("SPO2") || v.spo2 || v.SpO2 || v.oxygenSaturation);
   const temp = scalar(byType("TEMPERATURE") || v.temperature || v.temp);
-  const glucose = scalar(byType("BLOOD_GLUCOSE") || v.bloodGlucose || v.blood_glucose || v.glucose);
+  const glucose = scalar(byType("BLOOD_GLUCOSE") || v.bloodGlucose || v.blood_glucose || v.bloodSugar || v.blood_sugar || v.glucose);
 
   return {
     bp: bp || "—",
@@ -801,7 +804,7 @@
 }
 
   function formatBP(systolic, diastolic) {
-    if (systolic == null || diastolic == null) {
+    if (systolic == null || diastolic == null || String(systolic).includes("undefined") || String(diastolic).includes("undefined")) {
       return "";
     }
 
@@ -1197,7 +1200,7 @@
   if (full.triage?.triageLevel) fresh.triage = normalizeTriage(full.triage.triageLevel);
 
   ["name", "patientId", "age", "sex", "triage", "status", "chiefComplaint", "symptoms",
-   "redFlags", "rules", "vitals", "subjective", "ayush", "discrepancyFlags",
+   "redFlags", "rules", "vitals", "rawVitals", "environment", "vitalsDetail", "subjective", "ayush", "discrepancyFlags",
    "createdAt", "updatedAt"].forEach((key) => {
     const value = fresh[key];
     const empty =
@@ -1205,6 +1208,14 @@
       value === "" ||
       (Array.isArray(value) && value.length === 0) ||
       (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0);
+
+    if (key === "vitals" && patient.vitals && typeof value === "object") {
+      const freshHasReal = Object.values(value || {}).some((v) => v && v !== "—");
+      if (!freshHasReal) return;
+      patient.vitals = { ...patient.vitals, ...value };
+      return;
+    }
+
     if (!empty) patient[key] = value;
   });
 }
@@ -1398,25 +1409,40 @@
      VITALS
   =========================================================== */
 
+  function renderAltitudeContextBanner(patient) {
+    const ac = patient.altitudeContext;
+    if (!ac || ac.altitudeContext === 'NONE' || ac.altitudeContext === 'UNAVAILABLE') return '';
+
+    const isSignificant = ac.altitudeContext === 'SIGNIFICANT';
+    const patterns = Array.isArray(ac.patternsDetected) ? ac.patternsDetected.join(', ') : '';
+    const reasons = Array.isArray(ac.reasons) ? ac.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('') : '';
+
+    return `
+      <div style="margin-top: 12px; padding: 12px 16px; border-radius: 8px; background: ${isSignificant ? '#fef2f2' : '#f0f9ff'}; border: 1px solid ${isSignificant ? '#fecaca' : '#bae6fd'};">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+          <strong style="font-size: 13px; color: ${isSignificant ? '#b91c1c' : '#0369a1'};">
+            🏔️ Altitude Exposure Context (${ac.exposure?.facilityAltitudeM ?? 'High'} m) — ${ac.altitudeContext}
+          </strong>
+          ${patterns ? `<span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: ${isSignificant ? '#fee2e2' : '#e0f2fe'}; color: ${isSignificant ? '#991b1b' : '#0284c7'}; font-weight: 700;">${escapeHtml(patterns)}</span>` : ''}
+        </div>
+        <p style="font-size: 12px; color: #334155; margin: 0 0 6px 0;">${escapeHtml(ac.clinicalAdvisory || '')}</p>
+        ${reasons ? `<ul style="font-size: 11px; color: #64748b; margin: 0; padding-left: 18px;">${reasons}</ul>` : ''}
+      </div>
+    `;
+  }
+
   function renderVitals(patient) {
     const vitals = patient.vitals || {};
 
     return `
-
       <div class="vitals-strip">
-
         ${renderVital("BP", vitals.bp, "mmHg")}
-
         ${renderVital("Heart rate", vitals.hr, "bpm")}
-
         ${renderVital("SpO₂", vitals.spo2, "%")}
-
         ${renderVital("Temperature", vitals.temp, "°C")}
-
         ${renderVital("Glucose", vitals.glucose, "mg/dL")}
-
       </div>
-
+      ${renderAltitudeContextBanner(patient)}
     `;
   }
 

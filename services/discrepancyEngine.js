@@ -136,21 +136,27 @@ function evaluateClinicalDiscrepancies(intakePayload) {
     });
   }
 
-  // Contradiction 4: Severe Severity Rating with Completely Normal Vitals
+  // Contradiction 4: Severe Severity Rating with Completely Normal Measured Vitals
   const hasSevereRating = chiefComplaints?.some(c => c.severity === 'Severe');
-  if (hasSevereRating && vitals) {
-    const sys = Number(vitals.bloodPressure?.systolic?.value || 120);
-    const spo2 = Number(vitals.spo2?.value || 98);
-    const hr = Number(vitals.heartRate?.value || 72);
+  const hasMeasuredSys = vitals?.bloodPressure?.systolic?.value !== undefined && vitals.bloodPressure.systolic.value !== null;
+  const hasMeasuredSpO2 = vitals?.spo2?.value !== undefined && vitals.spo2.value !== null;
+  const hasMeasuredHR = vitals?.heartRate?.value !== undefined && vitals.heartRate.value !== null;
 
-    if (sys >= 110 && sys <= 130 && spo2 >= 97 && hr >= 60 && hr <= 90) {
-      flags.push({
-        flagId: `DISC_SEVERE_NORMAL_VITALS_${Date.now()}`,
-        category: "CLINICAL_ALERT",
-        field: "chiefComplaints.severity",
-        message: `Patient reported 'Severe' complaint severity, but all hardware vitals (BP ${sys} mmHg, SpO₂ ${spo2}%, HR ${hr} bpm) are completely within normal range.`,
-        severity: "MEDIUM"
-      });
+  if (hasSevereRating && hasMeasuredSys && hasMeasuredSpO2 && hasMeasuredHR) {
+    const sys = Number(vitals.bloodPressure.systolic.value);
+    const spo2 = Number(vitals.spo2.value);
+    const hr = Number(vitals.heartRate.value);
+
+    if (!isNaN(sys) && !isNaN(spo2) && !isNaN(hr)) {
+      if (sys >= 110 && sys <= 130 && spo2 >= 97 && hr >= 60 && hr <= 90) {
+        flags.push({
+          flagId: `DISC_SEVERE_NORMAL_VITALS_${Date.now()}`,
+          category: "CLINICAL_ALERT",
+          field: "chiefComplaints.severity",
+          message: `Patient reported 'Severe' complaint severity, but all hardware vitals (BP ${sys} mmHg, SpO₂ ${spo2}%, HR ${hr} bpm) are completely within normal range.`,
+          severity: "MEDIUM"
+        });
+      }
     }
   }
 
